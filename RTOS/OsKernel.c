@@ -25,6 +25,15 @@ uint32_t OS_TICK ;
 static void  IdleTask();
 static void  OsLuanchScheduler();
 static void  osTaskDelayCheck();
+static void  OsUserMode();
+
+static void  OsUserMode()
+{
+	/*-----Set Stack Pointer to PSP---*/
+	__asm volatile("MRS R0 , CONTROL");
+	__asm volatile("ORR R0,R0,#2");
+	__asm volatile("MSR CONTROL,R0");
+}
 
 void OsKernelTaskInit(uint32_t Thread_Index)
 {
@@ -201,8 +210,14 @@ void  OsKernelStart()
 	SYS.CLCK_DIV = SYS_CLK_8;
 	SYS.SystickTick  = SYSTICK_MS;
 	HAL_SYSTICK_Init(&SYS);
+	/*----Set MSP to Point to Kernel Stack----*/
+	__asm volatile("LDR R0,=kernelStackPtr");
+	__asm volatile("LDR R1,[R0]");
+	__asm volatile("MSR MSP ,R1");
 	/*-----Set Current Task-----*/
 	pCurrentTask  = OsReadyList.Front;
+	/*-----Switch To Stack of the User----*/
+	OsUserMode();
 	/*-----Luanch Scheduler-----*/
 	OsLuanchScheduler();
 }
@@ -267,10 +282,14 @@ static void OsLuanchScheduler()
 
 void __attribute__((naked)) PendSV_Handler(void)
 {
-	 OSEnterCritical();
+	OSEnterCritical();
 	 /*------Context Switch-----*/
 	 /*1] Save R4-R11 to Stack*/
 	 /*2] Save new Sp to Stack Pointer in TCB*/
+	 /*------Before Pushung to Stack Set MSP to PSP Location----*/
+	 __asm volatile ("MRS R0,PSP");
+	 __asm volatile ("MOV SP,R0");
+	 /*-----Push To Task Stack-------*/
 	 __asm volatile ("PUSH {R4-R11}");
 	 __asm volatile ("LDR R0, =pCurrentTask");
 	 __asm volatile ("LDR R1,[R0]");
@@ -295,6 +314,8 @@ void __attribute__((naked)) PendSV_Handler(void)
 	__asm volatile ("LDR R1,[R0]");
 	__asm volatile ("LDR SP,[R1,#8]");
 	__asm volatile ("POP {R4-R11}");
+	__asm volatile ("MRS R0 , MSP");
+	__asm volatile ("MSR PSP, R0");
 	OSExitCritical();
 	__asm volatile ("BX LR");
 }
