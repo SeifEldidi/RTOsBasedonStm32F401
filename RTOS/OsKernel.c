@@ -374,7 +374,7 @@ void osPriorityScheduler()
 			pCurrentTask = OsReadyList.Front;
 	} else {
 		if (KernelControl.ContextSwitchControl == OS_CONTEXT_NORMAL) {
-			//Remove Currently Executing Task and place at the Tail of the Tasks with same Priority Round Robin Priority
+			//Remove Currently Executing Task and place at the Tail of the Tasks with same Priority -> Round Robin Scheduling
 			OsDequeQueueFront(&OsReadyList);
 			TCB * NextTaskP = OsReadyList.Front;
 			TCB * PrevTask = NULL;
