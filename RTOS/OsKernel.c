@@ -286,7 +286,7 @@ void __attribute__((naked)) PendSV_Handler(void)
 	 /*------Context Switch-----*/
 	 /*1] Save R4-R11 to Stack*/
 	 /*2] Save new Sp to Stack Pointer in TCB*/
-	 /*------Before Pushung to Stack Set MSP to PSP Location----*/
+	 /*------Before Pushing to Stack Set MSP to PSP Location----*/
 	 __asm volatile ("MRS R0,PSP");
 	 __asm volatile ("MOV SP,R0");
 	 /*-----Push To Task Stack-------*/
@@ -306,9 +306,10 @@ void __attribute__((naked)) PendSV_Handler(void)
 	 __asm volatile ("BL  osPriorityScheduler");
 #endif
 	 __asm volatile ("POP  {R0,LR}");
-     /*------Context Switch of Previous Task-----*/
-	/*1] Save R4-R11 to Stack*/
+        /*------Context Switch of Previous Task Complete-----*/
+	/*1] pop R4-R11 of Next Task*/
 	/*2] Save new Sp to Stack Pointer in TCB*/
+	/*3] Copy the Value of the MSP into PSP */
 	/*--------Context Restore of Next Task------*/
 	__asm volatile ("LDR R0, =pCurrentTask");
 	__asm volatile ("LDR R1,[R0]");
