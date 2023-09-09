@@ -10,6 +10,8 @@
 extern TCB * pCurrentTask;
 extern TCBLinkedList OsReadyList;
 extern OsKernelControl KernelControl;
+
+#if OS_QUEUE_NUMBER >=0 && OS_QUEUE_NUMBER<=16
 QUEUCB_t   QueueCBS[OS_QUEUE_NUMBER];
 
 static void QueueCPYbuffer(void * Src ,void *dest,int8_t Size);
@@ -139,9 +141,23 @@ static void QueueCPYbuffer(void * Src ,void *dest,int8_t Size)
 {
 	if(Src != NULL && dest != NULL)
 	{
-		uint8_t MemCounter = 0;
-		for(MemCounter = 0; MemCounter<= Size-1 ;MemCounter++ )
-			*((unsigned char*)(dest) + MemCounter)=*(((unsigned char *)Src) + MemCounter );
+
+		uint8_t MemCounter_1 = 0;
+		uint8_t MemCounter_2 = 0;
+		uint8_t Size_1 = Size /SIZE_INT32;
+		uint8_t Size_2 = Size %SIZE_INT32;
+		if(Size_1 >0)
+		{
+			/*-------Copy Chunks of 4 bytes------*/
+			for(MemCounter_1 = 0; MemCounter_1<= Size_1-1 ;MemCounter_1++ )
+				*((uint32_t*)(dest) + MemCounter_1)=*(((uint32_t *)Src) + MemCounter_1 );
+		}else{}
+		if(Size_2 > 0)
+		{
+			MemCounter_1<<=INT32_SHIFT;
+			for(MemCounter_2 = 0; MemCounter_2<= Size_2-1 ;MemCounter_2++ )
+				*((uint8_t*)(dest) + MemCounter_1 +MemCounter_2)=*(((uint8_t *)Src) + MemCounter_1 +MemCounter_2 );
+		}else{}
 	}
 }
 
@@ -212,6 +228,7 @@ QueueState_t  OsQueueRecieveFront(uint8_t QueueID,void * Message,uint8_t blockin
 
 }
 
+#endif
 #endif
 
 #endif

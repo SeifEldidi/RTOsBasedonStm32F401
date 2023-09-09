@@ -26,12 +26,16 @@ typedef enum
 	SEMPH_UNAVAILABLE,
 	SEMPH_INVALIDID,
 	SEMPH_INVALIDPTR,
+	SEMPH_INVALIDOwnership
 }SEMP_State_t;
 
 typedef struct
 {
 	char * SemaphoreName;
 	int8_t Value;
+#if OS_MUTEX_ENABLE == TRUE
+	TCB *OwnerTask;
+#endif
 	TCBLinkedList OsSemaphoreList;
 	uint8_t TasksWaiting;
 }SemaphoreCB_t ;
@@ -40,19 +44,24 @@ typedef SemaphoreCB_t   Semaphore;
 typedef SemaphoreCB_t * pSemaphore;
 
 #if OS_SEMAPHORE_INIT == TRUE
-SEMP_State_t OsSemaphoreInit (int8_t SemaphoreID,int8_t Value,char *Name);
+SEMP_State_t OsMutexObtainOwnership(int8_t SemaphoreID);
+SEMP_State_t OsMutexReleaseOwnership(int8_t SemaphoreID);
+SEMP_State_t OsSemaphoreInit (int8_t SemaphoreID,int8_t Value,char *Name,TaskHandle_t Task);
 #endif
 
 #if OS_SEMAPHORE_OBTAIN == TRUE
 SEMP_State_t OsSemaphoreObtain(int8_t SemaphoreID,uint8_t Blocking);
+SEMP_State_t OsMutexTake(int8_t SemaphoreID,uint8_t Blocking);
 #endif
 
 #if OS_SEMAPHORE_RELEASE == TRUE
 SEMP_State_t OsSemaphoreRelease(int8_t SemaphoreID);
+SEMP_State_t OsMutexRelease(int8_t SemaphoreID,uint8_t Blocking);
 #endif
 
 #if OS_SEMAPHORE_RESET == TRUE
 SEMP_State_t OsSemaphoreReset(int8_t SemaphoreID);
+SEMP_State_t OsMutexReset(int8_t SemaphoreID,int8_t Value,char *Name);
 #endif
 
 #if OS_SEMAPHORE_COUNT == TRUE

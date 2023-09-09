@@ -17,6 +17,9 @@
 #define OS_QUEUE_BLOCK	1
 #define OS_QUEUE_NBLOCK	0
 
+#define SIZE_INT32		4
+#define INT32_SHIFT		2
+
 typedef struct
 {
 	char *QueueName;

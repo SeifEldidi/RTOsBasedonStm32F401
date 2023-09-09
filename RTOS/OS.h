@@ -28,6 +28,8 @@
 #define OS_CONTEXT_NORMAL		0
 
 #define OS_IDLE_TASK_OFFSET		OS_TASKS_NUM
+#define OS_IDLE_TASK			1
+#define OS_NORMAL_TASK			0
 #define OS_XPSR_OFFSET			1
 #define OS_PC_OFFSET			2
 #define OS_LR_OFFSET			3
@@ -55,7 +57,7 @@
 #define PENDSV_PENDING			(1<<28)
 
 #define MsToTicks(ms) (ms/OS_QUANTA)
-#define OSEnterCritical() ({ __asm volatile ("CPSID i");})
+#define OSEnterCritical() ({__asm volatile ("CPSID i");})
 #define OSExitCritical()  ({__asm volatile ("CPSIE i");})
 
 typedef int32_t * StackPtr;
@@ -65,7 +67,8 @@ typedef enum
 {
 	OS_OK,
 	OS_NOT_OK,
-	OS_NULL_PTR
+	OS_NULL_PTR,
+	OS_MEM_ERR,
 }OS_ERRS;
 
 typedef enum

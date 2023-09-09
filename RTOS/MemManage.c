@@ -13,83 +13,83 @@ int8_t PartitionNumber = 0;
 Header_t* BaseList    = NULL;
 uint32_t  Bytes_left  = 0;
 
-void   OsMallocInit()
+void   OsMallocInit(Header_t **Ref)
 {
 	BaseList = (Header_t *)(&OsHeap[0]);
 	BaseList->Size 	   = (((char*)&OsHeap[OS_HEAP_SIZE] - (char*)&OsHeap[0])>>HEADER_SHIFT);
 	BaseList->NextFree = BaseList;
+	*Ref = BaseList;
 }
 
 void * OsMalloc(unsigned int NoBytes)
 {
 	Header_t *Prev = NULL;
-	Header_t *Curr = NULL;
+	Header_t *Curr = BaseList;
 	int       Nuints = 0;
 	void *    Ptr = NULL;
 	Nuints = ((NoBytes+HEADER_SIZE-1)>>HEADER_SHIFT) + 1;
+	Bytes_left -= Nuints;
 
 	// init List if not initiliazed
 	//Allocate 1024 Byte for heap and Set Header to point to next free Block or NULL
 	if(BaseList == NULL)
-		OsMallocInit();
+		OsMallocInit(&Curr);
 
-	Prev = BaseList;
-	Curr = BaseList->NextFree;
-
-	while(Curr != NULL)
+	if(Bytes_left > 0)
 	{
-		if(Curr->Size >= Nuints)
+		while(Curr != NULL)
 		{
-			if(Curr->Size == Nuints)
+			if(Curr->Size >= Nuints)
 			{
-				//Block is the Exact Size
-				//point to Next Block Error Will Occur if 1 Block Remains
-				Prev->NextFree = Curr->NextFree;
-			}else{
-				Curr->Size -= Nuints;
-				// Remove Block from the end of the Current Block
-				Curr += Curr->Size;
-				Curr->Size = Nuints;
+				if(Curr->Size == Nuints)
+				{
+					if(Prev != NULL)
+						Prev->NextFree = Curr->NextFree;
+				}else{
+					Curr->Size -= Nuints;
+					// Remove Block from the end of the Current Block
+					Curr += Curr->Size;
+					Curr->Size = Nuints;
+				}
+				Ptr = (void *)(Curr + 1);
+				break;
 			}
-			BaseList = Prev;
-			Ptr = (void *)(Curr + 1);
-			break;
+			Prev = Curr;
+			Curr = Curr->NextFree;
 		}
-		Prev = Curr;
-		Curr = Curr->NextFree;
+	}else{
+		Ptr = NULL;
 	}
 	return Ptr;
 }
 
 void   OsFree(void *Free)
 {
-	Header_t *insertp = NULL;
-	Header_t *currp = BaseList;
+	Header_t * Current = BaseList;
 
-	insertp = ((Header_t *)Free) - 1;
-	/*--------Traverse List------*/
-	while((currp != NULL )&&(currp <insertp && insertp<currp->NextFree))
-	{
-		if((currp >= currp->NextFree) && ((currp < insertp) || (insertp < currp->NextFree)))
-				break;
-		currp = currp->NextFree;
+	Header_t * FreeNode = (((Header_t *) Free) - 1);
+	/*-----Search Free List for Block Position----*/
+	while (Current != NULL) {
+		if (Current < FreeNode
+				&& (Current->NextFree > FreeNode || Current->NextFree == NULL))
+			break;
+		Current = Current->NextFree;
 	}
-	if ((insertp + insertp->Size) == currp->NextFree) {
-		insertp->Size    += currp->NextFree->Size;
-		insertp->NextFree = currp->NextFree->NextFree;
+	if (FreeNode + FreeNode->Size == Current->NextFree) {
+		FreeNode->NextFree = Current->NextFree->NextFree;
+		FreeNode->Size += Current->NextFree->Size;
+		Current->NextFree->NextFree = NULL;
+		Current->NextFree->Size = 0;
+	} else {
+		FreeNode->NextFree = Current->NextFree;
 	}
-	else {
-		insertp->NextFree = currp->NextFree;
+	if (Current + Current->Size == FreeNode) {
+		Current->Size += FreeNode->Size;
+		Current->NextFree = FreeNode->NextFree;
+		FreeNode->NextFree = NULL;
+		FreeNode->Size = 0;
+	} else {
+		Current->NextFree = FreeNode;
 	}
-
-	if ((currp + currp->Size) == insertp) {
-		currp->Size += insertp->Size;
-		currp->NextFree = insertp->NextFree;
-	}
-	else {
-		currp->NextFree = insertp;
-	}
-
-	BaseList = currp;
 }
 

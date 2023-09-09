@@ -26,10 +26,9 @@ void OsInsertQueueHead(TCBLinkedList * Queue,TCB *Elem)
 void OsInsertQueueSorted(TCBLinkedList * Queue,TCB *Elem)
 {
 	if (Elem != NULL) {
-		TCB *NewTask = Elem;
 		TCB *PrevTask = NULL;
 		TCB *CurrTask = Queue->Front;
-		while(CurrTask&&CurrTask->Priority>Elem->Priority)
+		while(CurrTask&&CurrTask->Priority>=Elem->Priority)
 		{
 			PrevTask = CurrTask;
 			CurrTask = CurrTask->Next_Task;
@@ -38,6 +37,9 @@ void OsInsertQueueSorted(TCBLinkedList * Queue,TCB *Elem)
 		{
 			Elem->Next_Task = CurrTask;
 			PrevTask->Next_Task = Elem;
+			if(CurrTask == NULL)
+				Queue->Rear = Elem;
+			else{}
 		}else{
 			Queue->Front = Elem;
 			Elem->Next_Task = CurrTask;
@@ -62,6 +64,7 @@ void OsInsertQueueTail(TCBLinkedList * Queue,TCB *Elem)
 			Queue->Rear = Queue->Rear->Next_Task;
 			Queue->Rear->Next_Task = NULL;
 		}
+		Elem->Next_Task = NULL;
 		Queue->No_Tasks++;
 	}
 }
@@ -88,7 +91,12 @@ TCB *  OsDequeQueueElement(TCBLinkedList * Queue,TCB *Elem)
 		Elem->Next_Task = NULL;
 		Queue->No_Tasks --;
 	}else if(Head!= NULL && Prev == NULL){
-		Queue->Front = Queue->Front->Next_Task;
+		if(Queue->Front == Queue->Rear)
+		{
+			Queue->Front = Queue->Front->Next_Task;
+			Queue->Rear = Queue->Front;
+		}else
+			Queue->Front = Queue->Front->Next_Task;
 		Elem->Next_Task = NULL;
 		Queue->No_Tasks --;
 	}
