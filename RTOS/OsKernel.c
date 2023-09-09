@@ -281,6 +281,7 @@ void OsKernelTaskInitStatic(uint32_t Thread_Index)
 		OS_TASKS[Thread_Index].Sptr = (int32_t *)(&TCB_STACK[Thread_Index][OS_STACK_SIZE-OS_R4_OFFSET]);
 		OS_TASKS[Thread_Index].TaskCode = (P2FUNC)(IdleTask);
 		TCB_STACK[Thread_Index][OS_STACK_SIZE -OS_PC_OFFSET] = (uint32_t)(IdleTask);
+		IdleTaskPtr = &OS_TASKS[Thread_Index];
 	}
 	/*--------Init R0->R12-----*/
 	TCB_STACK[Thread_Index][OS_STACK_SIZE - OS_LR_OFFSET] = 0xDEADDEAD;
