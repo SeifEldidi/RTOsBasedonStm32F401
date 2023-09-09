@@ -22,6 +22,7 @@ TCBLinkedList OsSuspendedQueue;
 TCB *         pCurrentTask;
 TCB *         pCurrentTaskBlock;
 TCB *         IdleTaskPtr;
+int32_t       IdleTaskTime;
 /*----Global Control Variables----*/
 uint32_t OS_TICK ;
 
@@ -29,13 +30,14 @@ static void  IdleTask();
 static void  OsLuanchScheduler();
 static void  osTaskDelayCheck();
 static void  OsUserMode();
+void osTaskDelayCheck();
 
 #if OS_SCHEDULER_STATIC == TRUE
-	static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,TaskHandle_t *Taskhandle);
+static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,TaskHandle_t *Taskhandle);
 #endif
 
 #if OS_SCHEDULER_STATIC == FALSE
-	static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,uint32_t StackSize,TaskHandle_t *Taskhandle);
+static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,uint32_t StackSize,TaskHandle_t *Taskhandle);
 #endif
 
 static void  OsUserMode()
@@ -56,8 +58,8 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 		//Allocate Memory for TASK Stack and Task Control Block
 		TCB *TaskN = (TCB*)OsMalloc(1*sizeof(TCB));
 		TCB *IdleTCB = (TCB*)OsMalloc(1*sizeof(TCB));
-		StackPtr TaskStack = (StackPtr)OsMalloc(StackSize *sizeof(uint32_t));
-		StackPtr IDLETask =  (StackPtr)OsMalloc(50 *sizeof(uint32_t));
+		StackPtr TaskStack = (StackPtr)OsMalloc(StackSize *sizeof(OS_STACK_ALLIGN));
+		StackPtr IDLETask =  (StackPtr)OsMalloc(50 *sizeof(OS_STACK_ALLIGN));
 		if(TaskN != NULL && TaskStack != NULL)
 		{
 			TaskN->ID = ID;
@@ -79,7 +81,7 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 	} else if (OsReadyList.No_Tasks < OS_TASKS_NUM&& OsReadyList.No_Tasks > 0) {
 		/*----Adding A Task while Executing----*/
 		TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
-		StackPtr TaskStack = (StackPtr) OsMalloc(	StackSize * sizeof(uint32_t));
+		StackPtr TaskStack = (StackPtr) OsMalloc(	StackSize * sizeof(OS_STACK_ALLIGN));
 		if (TaskN != NULL && TaskStack != NULL) {
 			TaskN->ID = ID;
 			TaskN->Priority = Priority;
@@ -104,8 +106,8 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 		//Allocate Memory for TASK Stack and Task Control Block
 		TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
 		TCB *IdleTCB = (TCB*)OsMalloc(1*sizeof(TCB));
-		StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(uint32_t));
-		StackPtr IDLETask = (StackPtr) OsMalloc(50 * sizeof(uint32_t));
+		StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(OS_STACK_ALLIGN));
+		StackPtr IDLETask = (StackPtr) OsMalloc(50 * sizeof(OS_STACK_ALLIGN));
 		if(TaskN != NULL && TaskStack != NULL)
 		{
 			TaskN->ID = ID;
@@ -129,7 +131,7 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 		uint8_t TaskPriority = Priority;
 		/*----Adding A Task while Executing----*/
 		TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
-		StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(uint32_t));
+		StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(OS_STACK_ALLIGN));
 		if(TaskN != NULL && TaskStack != NULL)
 		{
 			TaskN->ID = ID;
@@ -271,6 +273,7 @@ void OsKernelTaskInitStatic(uint32_t Thread_Index)
 #if OS_FLOATING_POINT == DIS
 	/*----------Init Stack Pointer to point to block below registers-----*/
 	OS_TASKS[Thread_Index].Sptr = (int32_t *)(&TCB_STACK[Thread_Index][OS_STACK_SIZE-OS_R4_OFFSET]);
+	OS_TASKS[Thread_Index].CurrentSptr = OS_TASKS[Thread_Index].Sptr;
 	/*--------Set T bit to 1------*/
 	TCB_STACK[Thread_Index][OS_STACK_SIZE -OS_XPSR_OFFSET] = OS_EPSR_TBIT_SET;
 	/*-------Program Counter initialization---*/
@@ -281,7 +284,7 @@ void OsKernelTaskInitStatic(uint32_t Thread_Index)
 		OS_TASKS[Thread_Index].Sptr = (int32_t *)(&TCB_STACK[Thread_Index][OS_STACK_SIZE-OS_R4_OFFSET]);
 		OS_TASKS[Thread_Index].TaskCode = (P2FUNC)(IdleTask);
 		TCB_STACK[Thread_Index][OS_STACK_SIZE -OS_PC_OFFSET] = (uint32_t)(IdleTask);
-		IdleTaskPtr = &OS_TASKS[Thread_Index];
+		IdleTaskPtr =(TCB*) (&OS_TASKS[Thread_Index]);
 	}
 	/*--------Init R0->R12-----*/
 	TCB_STACK[Thread_Index][OS_STACK_SIZE - OS_LR_OFFSET] = 0xDEADDEAD;
@@ -306,6 +309,7 @@ void OsKernelTaskInitDynamic(uint32_t StackSize,StackPtr Stack,TCB *Task,uint8_t
 #if OS_FLOATING_POINT == DIS
 	/*----------Init Stack Pointer to point to block below registers-----*/
 	Task->Sptr =(int32_t*) (&Stack[OS_STACK_SIZE - OS_R4_OFFSET]);
+	Task->CurrentSptr = Task->Sptr;
 	/*--------Set T bit to 1------*/
 	Stack[OS_STACK_SIZE - OS_XPSR_OFFSET] = OS_EPSR_TBIT_SET;
 	/*-------Program Counter initialization---*/
@@ -472,8 +476,8 @@ void __attribute__((naked)) PendSV_Handler(void)
 {
 	 OSEnterCritical();
 	 /*------Context Switch-----*/
-	 /*1] Save R4-R11 to Stack*/
-	 /*2] Save new Sp to Stack Pointer in TCB*/
+	 /*3] Save R4-R11 to Stack*/
+	 /*4] Save new Sp to Stack Pointer in TCB*/
 	 /*------Before Pushung to Stack Set MSP to PSP Location----*/
 	 __asm volatile ("MRS R0,PSP");
 	 __asm volatile ("MOV SP,R0");
@@ -515,7 +519,6 @@ static void IdleTask()
 
 	}
 }
-
 
 void __attribute__((naked)) SysTick_Handler(void)
 {
@@ -560,6 +563,7 @@ void osPriorityScheduler()
 	if (pCurrentTask->TaskCode == (P2FUNC) IdleTask) {
 		if (OsReadyList.Front != NULL)
 			pCurrentTask = OsReadyList.Front;
+		IdleTaskTime++;
 	} else {
 		if (KernelControl.ContextSwitchControl == OS_CONTEXT_NORMAL) {
 			//Remove Currently Executing Task and place at the Tail of the Tasks with same Priority Round Robin Priority
@@ -602,7 +606,7 @@ void osPriorityScheduler()
 }
 #endif
 
-static void osTaskDelayCheck()
+void osTaskDelayCheck()
 {
 	TCB *FrontWaitingQueue = OsWaitingQueue.Front;
 	if(KernelControl.OsTickPassed == 1)
