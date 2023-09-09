@@ -27,6 +27,7 @@
 #define OS_CONTEXT_BLOCKED		1
 #define OS_CONTEXT_NORMAL		0
 
+#define OS_STACK_ALLIGN			int32_t
 #define OS_IDLE_TASK_OFFSET		OS_TASKS_NUM
 #define OS_IDLE_TASK			1
 #define OS_NORMAL_TASK			0
