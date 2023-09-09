@@ -24,8 +24,6 @@
 
 #include "../RTOS/RTOS.h"
 
-#define QUANTA 2
-
 void SystemInit()
 {
 	/*-----------84Mhz Clock Setting-----*/
@@ -43,12 +41,6 @@ void SystemInit()
 	/* SystemClock Init */
 	HAL_RCC_Init(&RCC_Config);
 }
-
-uint32_t Task1Counter   = 0;
-uint32_t Task2Counter   = 0;
-uint32_t Task3Counter   = 0;
-uint32_t Task2Periodic  = 0;
-TaskHandle_t Task1Handler = NULL;
 
 void PeriphInit()
 {
@@ -71,14 +63,21 @@ void PeriphInit()
 	xHAL_UsartInit(&Usart);
 }
 
+uint32_t Task1Counter   = 0;
+uint32_t Task2Counter   = 0;
+uint32_t Task3Counter   = 0;
+uint32_t Task2Periodic  = 0;
+uint32_t TaskRecieve    = 0;
+TaskHandle_t Task1Handler = NULL;
+TaskHandle_t Task3Handler = NULL;
 
 void Task1(void)
 {
 	while(1)
 	{
 		Task1Counter++;
-		OsSemaphoreObtain(0,OS_SEMAPHORE_BLOCK);
 		HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_0);
+		OsQueueRecieve(0,&TaskRecieve,OS_QUEUE_BLOCK);
 		OsDelay(MsToTicks(250));
 	}
 }
@@ -89,8 +88,7 @@ void Task2()
 	{
 		Task2Counter++;
 		HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_1);
-		OsDelay(MsToTicks(1500));
-		OsSemaphoreRelease(0);
+		OsDelay(MsToTicks(250));
 	}
 }
 
@@ -99,8 +97,23 @@ void Task3()
 	while(1)
 	{
 		Task3Counter++;
+		/*----Release Mutex with Ownership---*/
+		xHAL_UsartLogInfo(USART1,"Hello From Task 3.....! \n\r");
+		OsMutexRelease(1,OS_SEMAPHORE_BLOCK);
+
 		HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_2);
-		OsDelay(MsToTicks(250));
+		OsQueueSend(0,&Task1Counter,OS_QUEUE_BLOCK);
+		OsDelay(MsToTicks(1500));
+	}
+}
+
+void Task4()
+{
+	while(1)
+	{
+		OsMutexTake(1,OS_SEMAPHORE_BLOCK);
+		xHAL_UsartLogInfo(USART1,"Hello From Task 4.....! \n\r");
+		OsDelay(MsToTicks(1000));
 	}
 }
 
@@ -108,11 +121,14 @@ void Task3()
 int main(void)
 {
 	PeriphInit();
-	OSKernelAddThread(Task1,1,1,&Task1Handler);
-	OSKernelAddThread(Task2,2,1,NULL);
-	OSKernelAddThread(Task3,3,1,NULL);
-	OsSemaphoreInit(0,0,"UartSemaphore");
-	OsKernelStart(OS_QUANTA);
+	OSKernelAddThread(Task1,1,1,OS_STACK_SIZE,&Task1Handler);
+	OSKernelAddThread(Task2,2,1,OS_STACK_SIZE,NULL);
+	OSKernelAddThread(Task3,3,1,OS_STACK_SIZE,&Task3Handler);
+	OSKernelAddThread(Task4,4,1,OS_STACK_SIZE,NULL);
+	OsSemaphoreInit(0,0,"UartSemaphore",NULL);
+	OsSemaphoreInit(1,OS_SEMAPHORE_LOCK,"Mutex",Task3Handler);
+	QueueInit(0,OS_QUEUE_SIZE,"Queue0",sizeof(int));
+	OsKernelStart();
     /* Loop forever */
 	while(1)
 	{
