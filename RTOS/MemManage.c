@@ -8,7 +8,6 @@
 
 // One Big Block of size Determined By User---*/
 uint8_t OsHeap[OS_HEAP_SIZE];
-int8_t PartitionNumber = 0;
 
 Header_t* BaseList    = NULL;
 uint32_t  Bytes_left  = 0;
