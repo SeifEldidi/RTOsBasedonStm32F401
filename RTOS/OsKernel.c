@@ -31,11 +31,11 @@ static void  osTaskDelayCheck();
 static void  OsUserMode();
 
 #if OS_SCHEDULER_STATIC == TRUE
-static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,TaskHandle_t *Taskhandle);
+	static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,TaskHandle_t *Taskhandle);
 #endif
 
 #if OS_SCHEDULER_STATIC == FALSE
-static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,uint32_t StackSize,TaskHandle_t *Taskhandle);
+	static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,uint32_t StackSize,TaskHandle_t *Taskhandle);
 #endif
 
 static void  OsUserMode()
