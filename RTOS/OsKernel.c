@@ -517,11 +517,12 @@ static void IdleTask()
 }
 
 
-void SysTick_Handler(void)
+void __attribute__((naked)) SysTick_Handler(void)
 {
 	KernelControl.OsTickPassed = 1;
 	OS_TICK++;
 	ICSR = PENDSV_PENDING;
+	__asm volatile("BX LR");
 }
 
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
