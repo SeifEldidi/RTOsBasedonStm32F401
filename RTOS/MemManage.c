@@ -6,7 +6,7 @@
  */
 #include "MemManage.h"
 
-// One Big Block of size 1024Bye---*/
+// One Big Block of size Determined By User---*/
 uint8_t OsHeap[OS_HEAP_SIZE];
 int8_t PartitionNumber = 0;
 
