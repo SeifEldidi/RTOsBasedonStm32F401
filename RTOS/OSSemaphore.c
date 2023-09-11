@@ -10,6 +10,7 @@ extern TCB * pCurrentTask;
 extern TCBLinkedList OsReadyList;
 extern OsKernelControl KernelControl;
 
+
 #if OS_SEMAPHORE_NUMBER >=0 && OS_SEMAPHORE_NUMBER<=16
 Semaphore OSSemaphoreCBS[OS_SEMAPHORE_NUMBER];
 

@@ -11,6 +11,7 @@
 #include "../Inc/std_macros.h"
 #include "OS.h"
 #include "OSKernel.h"
+#include "MemManage.h"
 #include "RTOSConfig.h"
 #include "Deqeueu.h"
 
@@ -43,18 +44,35 @@ typedef enum
 typedef QUEUCB_t   Queue;
 typedef QUEUCB_t * pQueue;
 
-void QueueInit(uint8_t QueueID,uint8_t QueuLen,char * QueueName,uint8_t ItemSize);
+void QueueCreateStatic(uint8_t QueueID,uint8_t QueuLen,char * QueueName,uint8_t ItemSize);
+pQueue QueueCreateDynamic(uint8_t QueuLen,char * QueueName,uint8_t ItemSize);
 
 #if OS_QUEUE_SEND == TRUE
+#if OS_SCHEDULER_STATIC == TRUE
 QueueState_t  OsQueueSend(uint8_t QueueID,void * Message,uint8_t blocking);
+QueueState_t  OsQueueSendIsr(uint8_t QueueID,void * Message);
 QueueState_t  OsQueueSendBack(uint8_t QueueID,void * Message,uint8_t blocking);
 QueueState_t  OsQueueSendFront(uint8_t QueueID,void * Message,uint8_t blocking);
+#elif OS_SCHEDULER_STATIC == FALSE
+QueueState_t  OsQueueSend(pQueue QueuePtr,void * Message,uint8_t blocking);
+QueueState_t  OsQueueSendIsr(pQueue QueuePtr,void * Message);
+QueueState_t  OsQueueSendBack(pQueue QueuePtr,void * Message,uint8_t blocking);
+QueueState_t  OsQueueSendFront(pQueue QueuePtr,void * Message,uint8_t blocking);
+#endif
 #endif
 
 #if OS_QUEUE_RECIEVE == TRUE
+#if OS_SCHEDULER_STATIC == TRUE
 QueueState_t  OsQueueRecieve(uint8_t QueueID,void * Message,uint8_t blocking);
+QueueState_t  OsQueueRecieveISR(uint8_t QueueID,void * Message)
 QueueState_t  OsQueueRecieveBack(uint8_t QueueID,void * Message,uint8_t blocking);
 QueueState_t  OsQueueRecieveFront(uint8_t QueueID,void * Message,uint8_t blocking);
+#elif OS_SCHEDULER_STATIC == FALSE
+QueueState_t  OsQueueRecieve(pQueue QueuePtr,void * Message,uint8_t blocking);
+QueueState_t  OsQueueRecieveISR(pQueue QueuePtr,void * Message);
+QueueState_t  OsQueueRecieveBack(pQueue QueuePtr,void * Message,uint8_t blocking);
+QueueState_t  OsQueueRecieveFront(pQueue QueuePtr,void * Message,uint8_t blocking);
+#endif
 #endif
 
 #endif /* OSQUEUE_H_ */

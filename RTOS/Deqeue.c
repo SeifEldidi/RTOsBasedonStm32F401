@@ -27,12 +27,12 @@ uint8_t DequeueInsertRear(DeQueue * Queue,void * Message)
 {
 	uint8_t Success = QUEUE_OK;
 	if (!DequeueFull(Queue)) {
-		if (Queue->Rear == Queue->max_elements -1 )
+		Queue->List[Queue->Rear] = Message;
+		Queue->no_elements++;
+		if (Queue->Rear == Queue->max_elements - 1)
 			Queue->Rear = 0;
 		else
 			Queue->Rear += 1;
-		Queue->List[Queue->Rear] = Message;
-		Queue->no_elements++;
 	} else {
 		Success = QUEUE_NOK;
 	}

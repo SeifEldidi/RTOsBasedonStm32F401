@@ -28,9 +28,13 @@ uint32_t OS_TICK ;
 
 static void  IdleTask();
 static void  OsLuanchScheduler();
-static void  osTaskDelayCheck();
 static void  OsUserMode();
 void osTaskDelayCheck();
+#if OS_SCHEDULER_STATIC == TRUE
+static void 	OsKernelTaskInitStatic(uint32_t Thread_Index);
+#elif OS_SCHEDULER_STATIC == FALSE
+static void     OsKernelTaskInitDynamic(uint32_t StackSize,StackPtr Stack,TCB *Task,uint8_t Flag);
+#endif
 
 #if OS_SCHEDULER_STATIC == TRUE
 static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,TaskHandle_t *Taskhandle);
@@ -54,51 +58,34 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 	uint8_t OS_RET = OS_OK;
 	OSEnterCritical();
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
+	//Allocate Memory for TASK Stack and Task Control Block
+	TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
+	TCB *IdleTCB = (TCB*) OsMalloc(1 * sizeof(TCB));
 	if (OsReadyList.No_Tasks == 0) {
-		//Allocate Memory for TASK Stack and Task Control Block
-		TCB *TaskN = (TCB*)OsMalloc(1*sizeof(TCB));
-		TCB *IdleTCB = (TCB*)OsMalloc(1*sizeof(TCB));
-		StackPtr TaskStack = (StackPtr)OsMalloc(StackSize *sizeof(OS_STACK_ALLIGN));
-		StackPtr IDLETask =  (StackPtr)OsMalloc(50 *sizeof(OS_STACK_ALLIGN));
-		if(TaskN != NULL && TaskStack != NULL)
-		{
-			TaskN->ID = ID;
-			TaskN->Priority = Priority;
-			TaskN->TaskCode = TaskCode;
-			TaskN->WaitingTime = -1;
+		StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(OS_STACK_ALLIGN));
+		StackPtr IDLETask = (StackPtr) OsMalloc(50 * sizeof(OS_STACK_ALLIGN));
+	}
+	if (TaskN != NULL && TaskStack != NULL) {
+		TaskN->ID = ID;
+		TaskN->Priority = Priority;
+		TaskN->TaskCode = TaskCode;
+		TaskN->WaitingTime = -1;
 
-			if (Taskhandle != NULL)
-				(*Taskhandle) = TaskN;
-			else {
-			}
-			OsInsertQueueHead(&OsReadyList,TaskN);
-			OsKernelTaskInitDynamic(StackSize,TaskStack,TaskN,OS_NORMAL_TASK);
-			if(IDLETask != NULL && IdleTCB!= NULL)
-				OsKernelTaskInitDynamic(50,IDLETask,IdleTCB,OS_IDLE_TASK);
+		if (Taskhandle != NULL)
+			(*Taskhandle) = TaskN;
+		else {
+		}
+		OsInsertQueueHead(&OsReadyList, TaskN);
+		OsKernelTaskInitDynamic(StackSize, TaskStack, TaskN, OS_NORMAL_TASK);
+		if(OsReadyList.No_Tasks == 0)
+		{
+			if (IDLETask != NULL && IdleTCB != NULL)
+				OsKernelTaskInitDynamic(50, IDLETask, IdleTCB, OS_IDLE_TASK);
 		}else{
 			OS_RET = OS_MEM_ERR;
 		}
-	} else if (OsReadyList.No_Tasks < OS_TASKS_NUM&& OsReadyList.No_Tasks > 0) {
-		/*----Adding A Task while Executing----*/
-		TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
-		StackPtr TaskStack = (StackPtr) OsMalloc(	StackSize * sizeof(OS_STACK_ALLIGN));
-		if (TaskN != NULL && TaskStack != NULL) {
-			TaskN->ID = ID;
-			TaskN->Priority = Priority;
-			TaskN->TaskCode = TaskCode;
-			TaskN->WaitingTime = -1;
-
-			if (Taskhandle != NULL)
-				(*Taskhandle) = TaskN;
-			else {
-			}
-			OsInsertQueueHead(&OsReadyList, TaskN);
-			OsKernelTaskInitDynamic(StackSize,TaskStack,TaskN);
-		} else {
-			OS_RET = OS_MEM_ERR;
-		}
 	} else {
-		OS_RET = OS_NOT_OK;
+		OS_RET = OS_MEM_ERR;
 	}
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 	//insert Only into Head if Highest priority
@@ -125,7 +112,7 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 		else {
 			OS_RET = OS_MEM_ERR;
 		}
-	} else if (OsReadyList.No_Tasks < OS_TASKS_NUM && OsReadyList.No_Tasks > 0) {
+	} else if (OsReadyList.No_Tasks > 0) {
 		TCB *Prev = NULL;
 		TCB *pCurrentTaskL = OsReadyList.Front;
 		uint8_t TaskPriority = Priority;
@@ -268,12 +255,13 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 #endif
 
 #if OS_SCHEDULER_STATIC == TRUE
-void OsKernelTaskInitStatic(uint32_t Thread_Index)
+static void OsKernelTaskInitStatic(uint32_t Thread_Index)
 {
 #if OS_FLOATING_POINT == DIS
 	/*----------Init Stack Pointer to point to block below registers-----*/
 	OS_TASKS[Thread_Index].Sptr = (int32_t *)(&TCB_STACK[Thread_Index][OS_STACK_SIZE-OS_R4_OFFSET]);
-	OS_TASKS[Thread_Index].CurrentSptr = OS_TASKS[Thread_Index].Sptr;
+	OS_TASKS[Thread_Index].TopStack = OS_TASKS[Thread_Index].Sptr;
+	OS_TASKS[Thread_Index].EndStack = OS_TASKS[Thread_Index].Sptr - OS_STACK_SIZE;
 	/*--------Set T bit to 1------*/
 	TCB_STACK[Thread_Index][OS_STACK_SIZE -OS_XPSR_OFFSET] = OS_EPSR_TBIT_SET;
 	/*-------Program Counter initialization---*/
@@ -304,12 +292,13 @@ void OsKernelTaskInitStatic(uint32_t Thread_Index)
 #endif
 }
 #elif OS_SCHEDULER_STATIC == FALSE
-void OsKernelTaskInitDynamic(uint32_t StackSize,StackPtr Stack,TCB *Task,uint8_t Flag)
+static void OsKernelTaskInitDynamic(uint32_t StackSize,StackPtr Stack,TCB *Task,uint8_t Flag)
 {
 #if OS_FLOATING_POINT == DIS
 	/*----------Init Stack Pointer to point to block below registers-----*/
 	Task->Sptr =(int32_t*) (&Stack[OS_STACK_SIZE - OS_R4_OFFSET]);
-	Task->CurrentSptr = Task->Sptr;
+	Task->TopStack = Stack + StackSize;
+	Task->EndStack = Stack;
 	/*--------Set T bit to 1------*/
 	Stack[OS_STACK_SIZE - OS_XPSR_OFFSET] = OS_EPSR_TBIT_SET;
 	/*-------Program Counter initialization---*/
@@ -475,17 +464,20 @@ static void OsLuanchScheduler()
 void __attribute__((naked)) PendSV_Handler(void)
 {
 	 OSEnterCritical();
-	 /*------Context Switch-----*/
-	 /*3] Save R4-R11 to Stack*/
-	 /*4] Save new Sp to Stack Pointer in TCB*/
-	 /*------Before Pushung to Stack Set MSP to PSP Location----*/
-	 __asm volatile ("MRS R0,PSP");
-	 __asm volatile ("MOV SP,R0");
-	 /*-----Push To Task Stack-------*/
-	 __asm volatile ("PUSH {R4-R11}");
-	 __asm volatile ("LDR R0, =pCurrentTask");
-	 __asm volatile ("LDR R1,[R0]");
-	 __asm volatile ("STR SP,[R1,#8]");
+	 if(KernelControl.ContextSwitchControl != OS_CONTEXT_KILL)
+	 {
+		 /*------Context Switch-----*/
+		 /*3] Save R4-R11 to Stack*/
+		 /*4] Save new Sp to Stack Pointer in TCB*/
+		 /*------Before Pushung to Stack Set MSP to PSP Location----*/
+		 __asm volatile ("MRS R0,PSP");
+		 __asm volatile ("MOV SP,R0");
+		 /*-----Push To Task Stack-------*/
+		 __asm volatile ("PUSH {R4-R11}");
+		 __asm volatile ("LDR R0, =pCurrentTask");
+		 __asm volatile ("LDR R1,[R0]");
+		 __asm volatile ("STR SP,[R1,#8]");
+	 }
 	 /*-----Switch To Kernel Stack----*/
 	 __asm volatile ("LDR R1,=kernelStackPtr");
 	 __asm volatile ("LDR SP,[R1]");
@@ -601,6 +593,20 @@ void osPriorityScheduler()
 			else
 				pCurrentTask = IdleTaskPtr;
 			pCurrentTask->State = OS_TASK_RUNNING;
+		}else if(KernelControl.ContextSwitchControl == OS_CONTEXT_KILL)
+		{
+			KernelControl.ContextSwitchControl = OS_CONTEXT_NORMAL;
+			#if OS_SCHEDULER_STATIC == FALSE
+				OsDequeQueueFront(&OsReadyList);
+				TCB *NextTaskP = OsReadyList.Front;
+				if (NextTaskP != NULL) {
+					pCurrentTask = NextTaskP;
+				} else
+				{
+					pCurrentTask = IdleTaskPtr;
+					pCurrentTask->State = OS_TASK_RUNNING;
+				}
+			#endif
 		}
 	}
 }
@@ -632,3 +638,35 @@ void osTaskDelayCheck()
 	}
 	KernelControl.OsTickPassed = 0;
 }
+
+void osTaskStackOverflow()
+{
+	if(pCurrentTask->Sptr < pCurrentTask->EndStack )
+	{
+
+	}
+}
+
+
+#if OS_SCHEDULER_STATIC == FALSE
+void    OsKillTask(TaskHandle_t Taskhandle)
+{
+	OSEnterCritical();
+	TCB *CurrTask = NULL;
+	if(Taskhandle == NULL)
+	{
+		/*-------Kill Current Task------*/
+		CurrTask = pCurrentTask;
+	}else{
+		CurrTask = Taskhandle;
+	}
+	KernelControl.ContextSwitchControl = OS_CONTEXT_KILL;
+	/*------Free Stack-----*/
+	OsFree(CurrTask->EndStack);
+	/*------Free TCB------*/
+	OsFree(CurrTask);
+	/*------Switch Context to Next Task----*/
+	OsThreadYield(PRIVILEDGED_ACCESS);
+	OSExitCritical();
+}
+#endif

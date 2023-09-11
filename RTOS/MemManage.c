@@ -6,8 +6,9 @@
  */
 #include "MemManage.h"
 
-// One Big Block of size Determined By User---*/
+// One Big Block of size 1024Bye---*/
 uint8_t OsHeap[OS_HEAP_SIZE];
+int8_t PartitionNumber = 0;
 
 Header_t* BaseList    = NULL;
 uint32_t  Bytes_left  = 0;
@@ -16,7 +17,8 @@ void   OsMallocInit(Header_t **Ref)
 {
 	BaseList = (Header_t *)(&OsHeap[0]);
 	BaseList->Size 	   = (((char*)&OsHeap[OS_HEAP_SIZE] - (char*)&OsHeap[0])>>HEADER_SHIFT);
-	BaseList->NextFree = BaseList;
+	BaseList->NextFree = NULL;
+	Bytes_left = BaseList->Size;
 	*Ref = BaseList;
 }
 
@@ -27,7 +29,6 @@ void * OsMalloc(unsigned int NoBytes)
 	int       Nuints = 0;
 	void *    Ptr = NULL;
 	Nuints = ((NoBytes+HEADER_SIZE-1)>>HEADER_SHIFT) + 1;
-	Bytes_left -= Nuints;
 
 	// init List if not initiliazed
 	//Allocate 1024 Byte for heap and Set Header to point to next free Block or NULL
@@ -49,6 +50,7 @@ void * OsMalloc(unsigned int NoBytes)
 					// Remove Block from the end of the Current Block
 					Curr += Curr->Size;
 					Curr->Size = Nuints;
+					Bytes_left -= Nuints;
 				}
 				Ptr = (void *)(Curr + 1);
 				break;

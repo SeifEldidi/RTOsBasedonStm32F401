@@ -24,6 +24,8 @@
 
 #define OS_SCHEDULER_SUSPENDED 	1
 #define OS_SCHEDULER_RESUME		0
+
+#define OS_CONTEXT_KILL			2
 #define OS_CONTEXT_BLOCKED		1
 #define OS_CONTEXT_NORMAL		0
 
@@ -76,6 +78,7 @@ typedef enum
 {
 	PendSvNormalContextSwitch,
 	PendSvOSdelayContextSwitch,
+	PendSvOSKillContextSwitch,
 }PendSVCALL;
 
 typedef struct TCB
@@ -84,8 +87,11 @@ typedef struct TCB
 	uint8_t Priority;
 	uint8_t State;
 	P2FUNC  TaskCode;
-	/*-----Stack pointer-------*/
+	/*-----Stack pointers-------*/
 	StackPtr Sptr;
+	/*-----Memory Pointer-------*/
+	StackPtr TopStack;
+	StackPtr EndStack;
 	/*-----Pointer to Next TCB----*/
 	struct TCB *Next_Task;
 	/*-----Wating State---*/

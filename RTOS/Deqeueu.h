@@ -22,7 +22,11 @@ typedef struct
 {
 	int no_elements;
 	int max_elements;
+#if OS_SCHEDULER_STATIC == TRUE
 	void *List[OS_QUEUE_SIZE];
+#elif OS_SCHEDULER_STATIC == FALSE
+	void **List;
+#endif
 	uint8_t Front,Rear;
 }DeQueue;
 
