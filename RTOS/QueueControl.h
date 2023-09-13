@@ -10,7 +10,7 @@
 
 #include "OS.h"
 
-void OsInsertQueueSorted(TCBLinkedList * Queue,TCB *Elem);
+void  OsInsertQueueSorted(TCBLinkedList * Queue,TCB *Elem);
 void  OsInsertQueueHead(TCBLinkedList * Queue,TCB *Elem);
 void  OsInsertQueueTail(TCBLinkedList * Queue,TCB *Elem);
 TCB * OsDequeQueueElement(TCBLinkedList * Queue,TCB *Elem);

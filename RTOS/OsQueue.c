@@ -13,6 +13,7 @@ extern OsKernelControl KernelControl;
 
 #if OS_QUEUE_NUMBER >=0 && OS_QUEUE_NUMBER<=16
 QUEUCB_t   QueueCBS[OS_QUEUE_NUMBER];
+#endif
 #if OS_SCHEDULER_STATIC == TRUE
 static void QueueUnblockWaiting(uint8_t QueueID);
 static void QueueUnblockSending(uint8_t QueueID);
@@ -170,8 +171,12 @@ QueueState_t  OsQueueSend(pQueue QueuePtr,void * Message,uint8_t blocking)
 				QueuePtr->TasksWaitingSending++;
 				/*---------Deque from Ready List --------*/
 				OsDequeQueueElement(&OsReadyList, NewTask);
-				/*---------Insert into Semaphore Waiting List----*/
+				/*---------Insert into Queue Waiting List----*/
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+				OsInsertQueueSorted(&(QueuePtr->OsSendingList), NewTask);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 				OsInsertQueueTail(&(QueuePtr->OsSendingList),NewTask);
+#endif
 				QueueState = QueueFull;
 
 				KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
@@ -194,7 +199,22 @@ QueueState_t  OsQueueSendIsr(pQueue QueuePtr,void * Message)
 	if (QueuePtr != NULL) {
 		if (!DequeueFull(&QueuePtr->Queue)) {
 			DequeueInsertRear(&QueuePtr->Queue, Message);
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+			TCB *NewTask = QueuePtr->OsRecievingList.Front;
+			OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
+			OsInsertQueueSorted(&OsReadyList, NewTask); //O(n)
+			if((QueuePtr->OsRecievingList.Front)&&(QueuePtr->OsRecievingList.Front->Priority > pCurrentTask->Priority))
+			{
+				//Check if the Waiting Task is Higher in Priority than the Executing Task
+				//if Task is higher in priority Dequeue Task and request a context switch
+				//Request Context Switch
+				OsThreadYield(PRIVILEDGED_ACCESS);
+			}else{
+
+			}
+#endif
 		} else {
+			//Queue is Full ISR can't be blocked
 			QueueState = QueueFull;
 		}
 	}
@@ -292,7 +312,11 @@ QueueState_t  OsQueueSendFront(pQueue QueuePtr,void * Message,uint8_t blocking)
 				OsDequeQueueElement(&OsReadyList, NewTask);
 				/*---------Insert into Semaphore Waiting List----*/
 				KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
-				OsInsertQueueTail(&(QueuePtr->OsSendingList), NewTask);
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+				OsInsertQueueSorted(&(QueuePtr->OsSendingList), NewTask);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
+				OsInsertQueueTail(&(QueuePtr->OsSendingList),NewTask);
+#endif
 				OsThreadYield(PRIVILEDGED_ACCESS);
 				QueueState = QueueFull;
 			}
@@ -427,7 +451,11 @@ QueueState_t  OsQueueRecieve(pQueue QueuePtr,void * Message,uint8_t blocking)
 				/*---------Deque from Ready List --------*/
 				OsDequeQueueElement(&OsReadyList, NewTask);
 				/*---------Insert into Semaphore Waiting List----*/
-				OsInsertQueueTail(&(QueuePtr->OsRecievingList), NewTask);\
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+				OsInsertQueueSorted(&(QueuePtr->OsSendingList), NewTask);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
+				OsInsertQueueTail(&(QueuePtr->OsSendingList),NewTask);
+#endif
 				/*-----Force Reschedule----*/
 				KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
 				OsThreadYield(PRIVILEDGED_ACCESS);
@@ -502,4 +530,3 @@ static void QueueCPYbuffer(void * Src ,void *dest,int8_t Size)
 	}
 }
 
-#endif

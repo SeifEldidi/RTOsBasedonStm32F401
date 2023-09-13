@@ -64,6 +64,7 @@
 #define OSExitCritical()  ({__asm volatile ("CPSIE i");})
 
 typedef int32_t * StackPtr;
+typedef void *    pVoid;
 typedef void (*P2FUNC)(void);
 
 typedef enum
@@ -81,6 +82,7 @@ typedef enum
 	PendSvOSKillContextSwitch,
 }PendSVCALL;
 
+
 typedef struct TCB
 {
 	uint8_t ID;
@@ -94,11 +96,12 @@ typedef struct TCB
 	StackPtr EndStack;
 	/*-----Pointer to Next TCB----*/
 	struct TCB *Next_Task;
+	struct TCB *Prev_Task;
+	/*-----Pointer to Current Queue---*/
+	pVoid CurrQueue;
 	/*-----Wating State---*/
 	int32_t WaitingTime;
 }TCB;
-
-typedef TCB*    TaskHandle_t ;
 
 typedef struct
 {
@@ -106,12 +109,16 @@ typedef struct
 	int32_t No_Tasks;
 }TCBLinkedList;
 
+
+
 typedef struct
 {
 	uint8_t ContextSwitchControl;
 	uint8_t OsSchedulerSuspended;
 	uint8_t OsTickPassed;
 }OsKernelControl;
+
+typedef TCB*    TaskHandle_t ;
 
 
 #endif /* OS_H_ */

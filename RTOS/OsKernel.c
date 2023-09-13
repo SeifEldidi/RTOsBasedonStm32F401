@@ -70,6 +70,7 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 		TaskN->Priority = Priority;
 		TaskN->TaskCode = TaskCode;
 		TaskN->WaitingTime = -1;
+		TaskN->CurrQueue = OsReadyList;
 
 		if (Taskhandle != NULL)
 			(*Taskhandle) = TaskN;
@@ -101,6 +102,7 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 			TaskN->Priority = Priority;
 			TaskN->TaskCode = TaskCode;
 			TaskN->WaitingTime = -1;
+			TaskN->CurrQueue = &OsReadyList;
 
 			if (Taskhandle != NULL)
 				(*Taskhandle) = TaskN;
@@ -125,6 +127,7 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 			TaskN->Priority = Priority;
 			TaskN->TaskCode = TaskCode;
 			TaskN->WaitingTime = -1;
+			TaskN->CurrQueue = &OsReadyList;
 
 			while (pCurrentTaskL != NULL) {
 				//List is Sorted according to Priority
@@ -165,13 +168,14 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 {
 	uint8_t OS_RET = OS_OK;
 	OSEnterCritical();
-	#if OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 		if(OsReadyList.No_Tasks == 0)
 		{
 			OS_TASKS[OsReadyList.No_Tasks].ID 		= ID;
 			OS_TASKS[OsReadyList.No_Tasks].Priority  = Priority;
 			OS_TASKS[OsReadyList.No_Tasks].TaskCode  = TaskCode;
 			OS_TASKS[OsReadyList.No_Tasks].WaitingTime  = -1;
+			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList;
 
 			if(Taskhandle != NULL)
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
@@ -186,6 +190,7 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 			OS_TASKS[OsReadyList.No_Tasks].Priority  = Priority;
 			OS_TASKS[OsReadyList.No_Tasks].TaskCode  = TaskCode;
 			OS_TASKS[OsReadyList.No_Tasks].WaitingTime  = -1;
+			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList
 
 			if(Taskhandle != NULL)
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
@@ -195,7 +200,7 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 		}else{
 			OS_RET = OS_NOT_OK;
 		}
-	#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 		//insert Only into Head if Highest priority
 		if(OsReadyList.No_Tasks == 0)
 		{
@@ -203,6 +208,7 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 			OS_TASKS[OsReadyList.No_Tasks].Priority = Priority;
 			OS_TASKS[OsReadyList.No_Tasks].TaskCode = TaskCode;
 			OS_TASKS[OsReadyList.No_Tasks].WaitingTime = -1;
+			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList
 
 			if (Taskhandle != NULL)
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
@@ -220,6 +226,7 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 			OS_TASKS[OsReadyList.No_Tasks].Priority = Priority;
 			OS_TASKS[OsReadyList.No_Tasks].TaskCode = TaskCode;
 			OS_TASKS[OsReadyList.No_Tasks].WaitingTime = -1;
+			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList
 
 			while(pCurrentTaskL != NULL)
 			{
@@ -334,16 +341,20 @@ void  OsTaskSuspend(TaskHandle_t  TaskHandler)
 	OSEnterCritical();
 	TaskHandle_t Found = NULL;
 	/*----Remove From Ready Queue----*/
-	Found = OsDequeQueueElement(&OsReadyList,TaskHandler);
-	if(Found == NULL)
-		Found = OsDequeQueueElement(&OsWaitingQueue,TaskHandler);
+	Found = OsDequeQueueElement(TaskHandler->CurrQueue,TaskHandler);
 	if(Found != NULL)
 	{
 		/*----Should Check Suspended Queue Will be Added Later----*/
 		TaskHandler->State = OS_TASK_SUSPENDED;
 		TaskHandler->Next_Task = NULL ;
 		TaskHandler->WaitingTime = -1;
+		TaskHandler->CurrQueue = &OsSuspendedQueue;
+
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+		OsInsertQueueSorted(&OsSuspendedQueue,TaskHandler);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 		OsInsertQueueTail(&OsSuspendedQueue,TaskHandler);
+#endif
 	}
 	OSExitCritical();
 }
@@ -355,7 +366,12 @@ void  OsTaskResume(TaskHandle_t  TaskHandler)
 	Found = OsDequeQueueElement(&OsSuspendedQueue,TaskHandler);
 	if(Found != NULL)
 	{
+		TaskHandler->CurrQueue = &OsReadyList;
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+		OsInsertQueueSorted(&OsReadyList,TaskHandler);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 		OsInsertQueueTail(&OsReadyList,TaskHandler);
+#endif
 		TaskHandler->State = OS_TASK_READY;
 		TaskHandler->Next_Task = NULL;
 		TaskHandler->WaitingTime = -1;
@@ -417,7 +433,12 @@ void OsDelay(uint32_t delayQuantaBased)
 			/*-----Remove Task From Ready Queue----*/
 			OsDequeQueueElement(&OsReadyList,NewTask);
 			/*-----Insert Task to Blocking Queue----*/
+			pCurrentTask->CurrQueue = &OsWaitingQueue;
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+			OsInsertQueueSorted(&OsWaitingQueue,NewTask);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 			OsInsertQueueTail(&OsWaitingQueue,NewTask);
+#endif
 			KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
 			pCurrentTask = NewTask;
 		}
@@ -597,7 +618,6 @@ void osPriorityScheduler()
 		{
 			KernelControl.ContextSwitchControl = OS_CONTEXT_NORMAL;
 			#if OS_SCHEDULER_STATIC == FALSE
-				OsDequeQueueFront(&OsReadyList);
 				TCB *NextTaskP = OsReadyList.Front;
 				if (NextTaskP != NULL) {
 					pCurrentTask = NextTaskP;
@@ -639,34 +659,35 @@ void osTaskDelayCheck()
 	KernelControl.OsTickPassed = 0;
 }
 
-void osTaskStackOverflow()
-{
-	if(pCurrentTask->Sptr < pCurrentTask->EndStack )
-	{
-
-	}
-}
-
 
 #if OS_SCHEDULER_STATIC == FALSE
 void    OsKillTask(TaskHandle_t Taskhandle)
 {
 	OSEnterCritical();
 	TCB *CurrTask = NULL;
+	uint8_t ContextSwitch = 0;
 	if(Taskhandle == NULL)
 	{
+		//Currently Running Task is the first Task in the Ready Queue
+		OsDequeQueueFront(&OsReadyList);
 		/*-------Kill Current Task------*/
 		CurrTask = pCurrentTask;
+		/*-------Reqeust Context Switch----*/
+		KernelControl.ContextSwitchControl = OS_CONTEXT_KILL;
+		ContextSwitch = 1;
 	}else{
+		//Remove the Task from the Queue it is Placed Inside
+		OsDequeQueueElement(Taskhandle->CurrQueue,Taskhandle);
 		CurrTask = Taskhandle;
 	}
-	KernelControl.ContextSwitchControl = OS_CONTEXT_KILL;
 	/*------Free Stack-----*/
 	OsFree(CurrTask->EndStack);
 	/*------Free TCB------*/
 	OsFree(CurrTask);
 	/*------Switch Context to Next Task----*/
-	OsThreadYield(PRIVILEDGED_ACCESS);
+	if(ContextSwitch == 1)
+		OsThreadYield(PRIVILEDGED_ACCESS);
+	else{}
 	OSExitCritical();
 }
 #endif
