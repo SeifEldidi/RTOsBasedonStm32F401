@@ -16,8 +16,6 @@
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 #define OS_QUANTA 					1
 #endif
-#define OS_TASK_PRIORITY_MAX    	7
-
 #define OS_HEAP_SIZE				16000
 #define OS_STACK_SIZE				200
 #define OS_KERNEL_STACK_SIZE		100

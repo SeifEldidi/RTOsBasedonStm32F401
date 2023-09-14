@@ -8,6 +8,7 @@
 #include "OsQueue.h"
 
 extern TCB * pCurrentTask;
+extern TCB * IdleTaskPtr;
 extern TCBLinkedList OsReadyList;
 extern OsKernelControl KernelControl;
 
@@ -78,7 +79,11 @@ static void QueueUnblockWaiting(pQueue QueuePtr)
 	TCB *CurrentTask = QueuePtr->OsRecievingList.Front;
 	QueuePtr->TasksWaitingRecieving--;
 	OsDequeQueueElement(&(QueuePtr->OsRecievingList),CurrentTask);
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+	OsInsertQueueSorted(&OsReadyList, CurrentTask);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 	OsInsertQueueTail(&OsReadyList, CurrentTask);
+#endif
     CurrentTask->State = OS_TASK_READY;
 }
 #endif
@@ -201,16 +206,33 @@ QueueState_t  OsQueueSendIsr(pQueue QueuePtr,void * Message)
 			DequeueInsertRear(&QueuePtr->Queue, Message);
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 			TCB *NewTask = QueuePtr->OsRecievingList.Front;
-			OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
-			OsInsertQueueSorted(&OsReadyList, NewTask); //O(n)
-			if((QueuePtr->OsRecievingList.Front)&&(QueuePtr->OsRecievingList.Front->Priority > pCurrentTask->Priority))
+			if(NewTask != NULL)
 			{
-				//Check if the Waiting Task is Higher in Priority than the Executing Task
-				//if Task is higher in priority Dequeue Task and request a context switch
-				//Request Context Switch
-				OsThreadYield(PRIVILEDGED_ACCESS);
-			}else{
+				uint8_t Priority = NewTask->Priority;
+				OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
+				OsInsertQueueSorted(&OsReadyList, NewTask); //O(n) in case of having a task with lower priority but o(1) if Higher Priority
+				if((Priority > pCurrentTask->Priority) || (pCurrentTask == IdleTaskPtr  ))
+				{
+					//Check if the Waiting Task is Higher in Priority than the Executing Task
+					//if Task is higher in priority request a context switch
+					//Request Context Switch
+					OsThreadYield(PRIVILEDGED_ACCESS);
+				}else{
 
+				}
+			}
+#endif
+#elif  OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
+			TCB *NewTask = QueuePtr->OsRecievingList.Front;
+			if (NewTask != NULL) {
+				OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
+				OsInsertQueueTail(&OsReadyList, NewTask); //O(1)
+				if(pCurrentTask == IdleTaskPtr)
+				{
+					OsThreadYield(PRIVILEDGED_ACCESS);
+				}else{
+
+				}
 			}
 #endif
 		} else {
@@ -349,7 +371,11 @@ static void QueueUnblockSending(pQueue QueuePtr)
 	TCB *CurrentTask = QueuePtr->OsSendingList.Front;
 	QueuePtr->TasksWaitingSending--;
 	OsDequeQueueElement(&(QueuePtr->OsSendingList), CurrentTask);
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+	OsInsertQueueSorted(&OsReadyList, CurrentTask);
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 	OsInsertQueueTail(&OsReadyList, CurrentTask);
+#endif
 	CurrentTask->State = OS_TASK_READY;
 }
 #endif
@@ -452,9 +478,9 @@ QueueState_t  OsQueueRecieve(pQueue QueuePtr,void * Message,uint8_t blocking)
 				OsDequeQueueElement(&OsReadyList, NewTask);
 				/*---------Insert into Semaphore Waiting List----*/
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-				OsInsertQueueSorted(&(QueuePtr->OsSendingList), NewTask);
+				OsInsertQueueSorted(&(QueuePtr->OsRecievingList), NewTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
-				OsInsertQueueTail(&(QueuePtr->OsSendingList),NewTask);
+				OsInsertQueueTail(&(QueuePtr->OsRecievingList),NewTask);
 #endif
 				/*-----Force Reschedule----*/
 				KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
@@ -482,8 +508,33 @@ QueueState_t  OsQueueRecieveISR(pQueue QueuePtr,void * Message)
 			void *Src = DequeueRemoveRear(&QueuePtr->Queue);
 			QueueCPYbuffer(Src, Message, QueuePtr->ItemSize);
 		} else {
-			QueueState = QueueEmpty;
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+			TCB *NewTask = QueuePtr->OsRecievingList.Front;
+			if(NewTask != NULL)
+			{
+				uint8_t Priority = NewTask->Priority;
+				OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
+				OsInsertQueueSorted(&OsReadyList, NewTask); //O(n) in case of having a task with lower priority but o(1) if Higher Priority
+				if((Priority > pCurrentTask->Priority) || (pCurrentTask == IdleTaskPtr  ) )
+				{
+					//Receiving Task will unblock a Task which is A Higher Priority
+					OsThreadYield(PRIVILEDGED_ACCESS);
+				}
+				QueueState = QueueEmpty;
+			}
 		}
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
+		TCB *NewTask = QueuePtr->OsRecievingList.Front;
+		if (NewTask != NULL) {
+			OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
+			OsInsertQueueTail(&OsReadyList, NewTask); //O(1)
+			if (pCurrentTask == IdleTaskPtr) {
+				OsThreadYield(PRIVILEDGED_ACCESS);
+			} else {
+
+			}
+		}
+#endif
 	}
 	OSExitCritical();
 	return QueueState;
@@ -502,7 +553,6 @@ QueueState_t  OsQueueRecieveFront(uint8_t QueueID,void * Message,uint8_t blockin
 }
 #elif OS_SCHEDULER_STATIC == FALSE
 
-#endif
 #endif
 #endif
 

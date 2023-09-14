@@ -11,12 +11,12 @@ uint8_t DequeueInsertFront(DeQueue * Queue,void * Message)
 	uint8_t Success = QUEUE_OK;
 	if(!DequeueFull(Queue))
 	{
+		Queue->List[Queue->Front] = Message;
+		Queue->no_elements++;
 		if(Queue->Front <=0)
 			Queue->Front = Queue->max_elements-1;
 		else
 			Queue->Front -=1;
-		Queue->List[Queue->Front] = Message;
-		Queue->no_elements++;
 	}else{
 		Success = QUEUE_NOK;
 	}
@@ -43,11 +43,11 @@ void * DequeueRemoveFront(DeQueue * Queue)
 {
 	void *Ret = NULL;
 	if (!DequeueEmpty(Queue)) {
-		Ret = Queue->List[Queue->Front];
 		if (Queue->Front == Queue->max_elements -1)
 			Queue->Front = 0;
 		else
 			Queue->Front += 1;
+		Ret = Queue->List[Queue->Front];
 		Queue->no_elements--;
 	} else {
 		Ret = NULL;
@@ -59,11 +59,11 @@ void * DequeueRemoveRear(DeQueue * Queue)
 {
 	void *Ret = NULL;
 	if (!DequeueEmpty(Queue)) {
-		Ret = Queue->List[Queue->Rear];
-		if (Queue->Front == 0)
-			Queue->Front = Queue->max_elements -1;
+		if (Queue->Rear == 0)
+			Queue->Rear = Queue->max_elements -1;
 		else
-			Queue->Front -= 1;
+			Queue->Rear -= 1;
+		Ret = Queue->List[Queue->Rear];
 		Queue->no_elements--;
 	} else {
 		Ret = NULL;

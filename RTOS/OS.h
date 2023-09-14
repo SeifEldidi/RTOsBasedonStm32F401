@@ -109,8 +109,6 @@ typedef struct
 	int32_t No_Tasks;
 }TCBLinkedList;
 
-
-
 typedef struct
 {
 	uint8_t ContextSwitchControl;

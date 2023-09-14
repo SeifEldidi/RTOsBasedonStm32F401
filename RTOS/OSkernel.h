@@ -19,6 +19,9 @@
 #if OS_SCHEDULER_STATIC == FALSE
 void    OsKillTask(TaskHandle_t Taskhandle);
 #endif
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+void    OsPrioritySet(TaskHandle_t Taskhandle,uint8_t Priority);
+#endif
 uint8_t OSKernelAddThread(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,uint32_t StackSize,TaskHandle_t *Taskhandle);
 void 	OsKernelStart();
 void 	OsDelay(uint32_t delayQuantaBased);

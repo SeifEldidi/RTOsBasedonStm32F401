@@ -16,6 +16,7 @@ int32_t     KernelStack[OS_KERNEL_STACK_SIZE];
 int32_t    *kernelStackPtr = &KernelStack[OS_KERNEL_STACK_SIZE -1 ];
 OsKernelControl KernelControl;
 /*-----Create Global LinkedLists for Queues----*/
+
 TCBLinkedList OsReadyList;
 TCBLinkedList OsWaitingQueue;
 TCBLinkedList OsSuspendedQueue;
@@ -81,7 +82,10 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 		if(OsReadyList.No_Tasks == 0)
 		{
 			if (IDLETask != NULL && IdleTCB != NULL)
+			{
+				IdleTCB->Priority = 0;
 				OsKernelTaskInitDynamic(50, IDLETask, IdleTCB, OS_IDLE_TASK);
+			}
 		}else{
 			OS_RET = OS_MEM_ERR;
 		}
@@ -109,7 +113,10 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 			OsInsertQueueHead(&OsReadyList, TaskN);
 			OsKernelTaskInitDynamic(StackSize,TaskStack,TaskN,OS_NORMAL_TASK);;
 			if(IDLETask != NULL && IdleTCB!= NULL)
+			{
+				IdleTCB->Priority = 0;
 				OsKernelTaskInitDynamic(50,IDLETask,IdleTCB,OS_IDLE_TASK);
+			}
 		}
 		else {
 			OS_RET = OS_MEM_ERR;
@@ -181,8 +188,8 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
 			else{}
 			OsInsertQueueHead(&OsReadyList,&OS_TASKS[OsReadyList.No_Tasks]);
-			OsKernelTaskInit(OsReadyList.No_Tasks -1);
-			OsKernelTaskInit(OS_IDLE_TASK_OFFSET);
+			OsKernelTaskInitStatic(OsReadyList.No_Tasks -1);
+			OsKernelTaskInitStatic(OS_IDLE_TASK_OFFSET);
 		}else if(OsReadyList.No_Tasks < OS_TASKS_NUM && OsReadyList.No_Tasks > 0)
 		{
 			/*----Adding A Task while Executing----*/
@@ -196,7 +203,7 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
 			else{}
 			OsInsertQueueTail(&OsReadyList,&OS_TASKS[OsReadyList.No_Tasks]);
-			OsKernelTaskInit(OsReadyList.No_Tasks -1);
+			OsKernelTaskInitStatic(OsReadyList.No_Tasks -1);
 		}else{
 			OS_RET = OS_NOT_OK;
 		}
@@ -276,6 +283,7 @@ static void OsKernelTaskInitStatic(uint32_t Thread_Index)
 		TCB_STACK[Thread_Index][OS_STACK_SIZE -OS_PC_OFFSET] = (uint32_t)(OS_TASKS[Thread_Index].TaskCode);
 	else
 	{
+		OS_TASKS[Thread_Index].Priority = 0;
 		OS_TASKS[Thread_Index].Sptr = (int32_t *)(&TCB_STACK[Thread_Index][OS_STACK_SIZE-OS_R4_OFFSET]);
 		OS_TASKS[Thread_Index].TaskCode = (P2FUNC)(IdleTask);
 		TCB_STACK[Thread_Index][OS_STACK_SIZE -OS_PC_OFFSET] = (uint32_t)(IdleTask);
@@ -659,6 +667,27 @@ void osTaskDelayCheck()
 	KernelControl.OsTickPassed = 0;
 }
 
+
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+void OsPrioritySet(TaskHandle_t Taskhandle,uint8_t Priority)
+{
+	if(Taskhandle != NULL)
+	{
+		OsDequeQueueElement((TCBLinkedList *)&Taskhandle->CurrQueue, Taskhandle);
+		Taskhandle->Priority = Priority ;
+		OsInsertQueueSorted((TCBLinkedList *)&Taskhandle->CurrQueue, Taskhandle);
+		if(Taskhandle->CurrQueue == (void*)(&OsReadyList) )
+		{
+			if((pCurrentTask && pCurrentTask->Priority <Priority) || pCurrentTask == IdleTaskPtr)
+				OsThreadYield(PRIVILEDGED_ACCESS);
+		}
+	}else{
+		OsDequeQueueElement((TCBLinkedList *)&pCurrentTask->CurrQueue, Taskhandle);
+		pCurrentTask->Priority = Priority;
+		OsInsertQueueSorted((TCBLinkedList *)&pCurrentTask->CurrQueue, Taskhandle);
+	}
+}
+#endif
 
 #if OS_SCHEDULER_STATIC == FALSE
 void    OsKillTask(TaskHandle_t Taskhandle)
