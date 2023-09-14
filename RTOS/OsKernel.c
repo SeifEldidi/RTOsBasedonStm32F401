@@ -573,6 +573,19 @@ void osRoundRobinScheduler()
 			else
 				pCurrentTask = &OS_TASKS[OS_IDLE_TASK_OFFSET];
 			pCurrentTask->State = OS_TASK_RUNNING;
+		}else if(KernelControl.ContextSwitchControl == OS_CONTEXT_KILL)
+		{
+			KernelControl.ContextSwitchControl = OS_CONTEXT_NORMAL;
+			#if OS_SCHEDULER_STATIC == FALSE
+				TCB *NextTaskP = OsReadyList.Front;
+				if (NextTaskP != NULL) {
+					pCurrentTask = NextTaskP;
+				} else
+				{
+					pCurrentTask = IdleTaskPtr;
+					pCurrentTask->State = OS_TASK_RUNNING;
+				}
+			#endif
 		}
 	}
 }
