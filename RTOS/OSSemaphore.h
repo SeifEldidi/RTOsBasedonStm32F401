@@ -66,6 +66,7 @@ SEMP_State_t OsMutexTake(int8_t SemaphoreID,uint8_t Blocking);
 #elif OS_SCHEDULER_STATIC == FALSE
 SEMP_State_t OsMutexTake(pSemaphore Mutex,uint8_t Blocking);
 SEMP_State_t OsSemaphoreObtain(pSemaphore Semaphore,uint8_t Blocking);
+SEMP_State_t OsSemaphoreObtainISR(pSemaphore Semaphore,uint8_t Blocking);
 #endif
 #endif
 
@@ -76,6 +77,7 @@ SEMP_State_t OsMutexRelease(int8_t SemaphoreID,uint8_t Blocking);
 #elif OS_SCHEDULER_STATIC == FALSE
 SEMP_State_t OsMutexRelease(pSemaphore Mutex,uint8_t Blocking);
 SEMP_State_t OsSemaphoreRelease(pSemaphore Semaphore);
+SEMP_State_t OsSemaphoreReleaseISR(pSemaphore Semaphore);
 #endif
 #endif
 

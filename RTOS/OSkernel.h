@@ -11,7 +11,6 @@
 #include "OS.h"
 #include "MemManage.h"
 #include "QueueControl.h"
-#include "BlockList.h"
 
 #define PRIVILEDGED_ACCESS  0
 #define NPRIVILEDGED_ACCESS 1

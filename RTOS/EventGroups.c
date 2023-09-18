@@ -150,6 +150,7 @@ EventType  EventGroupSetBits  (pEventGroup Event,EventType MSK)
 				ContextFlag = 1;
 			head = head->Next_Task;
 		}
+		Event->EventGroupBits = 0;//Clear
 		if(ContextFlag == 1)
 		{
 			KernelControl.ContextSwitchControl = OS_CONTEXT_NORMAL;

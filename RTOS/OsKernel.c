@@ -514,6 +514,7 @@ void __attribute__((naked)) PendSV_Handler(void)
 	 __asm volatile ("PUSH {R0,LR}");
 	 //-----Recall stack frame of function is destroyed after function call i.e SP points to same location before func execution
 	 __asm volatile ("BL  osTaskDelayCheck");
+	 __asm volatile ("BL   TimerDelayCheck");
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 	 __asm volatile ("BL  osRoundRobinScheduler");
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY

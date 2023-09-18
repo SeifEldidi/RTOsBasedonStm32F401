@@ -87,7 +87,7 @@ static void OsBlockTask(TCBLinkedList * TargetList,TCBLinkedList *SrcList,pSemap
 static void OsUnblockTasks(TCBLinkedList * TargetList,TCBLinkedList *SrcList,pSemaphore SemaphoreID)
 {
 	TCB *CurrentTask = SrcList->Front;
-	/*------Release all Tasks blocked on This Semaphore----*/
+	/*------Release Recent Task blocked on This Semaphore----*/
 	if (CurrentTask != NULL) {
 		SemaphoreID->TasksWaiting--;
 		OsDequeQueueElement(SrcList, CurrentTask);
@@ -206,6 +206,24 @@ SEMP_State_t OsSemaphoreObtain(pSemaphore Semaphore,uint8_t Blocking)
 	return Err_State;
 }
 
+SEMP_State_t OsSemaphoreObtainISR(pSemaphore Semaphore,uint8_t Blocking)
+{
+	OSEnterCritical();
+	SEMP_State_t Err_State = SEMPH_SUCESS;
+	if (Semaphore != NULL) {
+			/*----Available Semaphore-----*/
+		if (Semaphore->Value > OS_SEMAPHORE_LOCK) {
+			Semaphore->Value--;
+		}else {
+
+		}
+	} else {
+		Err_State = SEMPH_INVALIDID;
+	}
+	OSExitCritical();
+	return Err_State;
+}
+
 SEMP_State_t OsSemaphoreRelease(pSemaphore Semaphore)
 {
 	OSEnterCritical();
@@ -223,6 +241,37 @@ SEMP_State_t OsSemaphoreRelease(pSemaphore Semaphore)
 			/*----No Reschedule is Forced----*/
 			Err_State = SEMPH_SUCESS;
 		} else {
+		}
+		Semaphore->Value++;
+	} else {
+		Err_State = SEMPH_INVALIDID;
+	}
+	OSExitCritical();
+	return Err_State;
+}
+
+SEMP_State_t OsSemaphoreReleaseISR(pSemaphore Semaphore)
+{
+	OSEnterCritical();
+	SEMP_State_t Err_State = SEMPH_SUCESS;
+	if (Semaphore != NULL) {
+		if (Semaphore->Value <= 0) {
+			TCB * ReleaseTask = Semaphore->OsSemaphoreList.Front;
+			if(ReleaseTask != NULL)
+			{
+					//Remove Task from Waiting Queue
+				   OsDequeQueueElement(&OsReadyFIFO[ReleaseTask->Priority], ReleaseTask);
+			#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+				   OsInsertQueueTail(&OsReadyFIFO[ReleaseTask->Priority], ReleaseTask);
+			#elif S_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
+				   OsInsertQueueTail(TargetList, ReleaseTask);
+			#endif
+				if (ReleaseTask->Priority > pCurrentTask->Priority)
+					OsThreadYield(PRIVILEDGED_ACCESS);
+			}
+			Err_State = SEMPH_SUCESS;
+		} else {
+
 		}
 		Semaphore->Value++;
 	} else {
