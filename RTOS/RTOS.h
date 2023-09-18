@@ -12,5 +12,6 @@
 #include "OSSemaphore.h"
 #include "MemManage.h"
 #include "OsQueue.h"
+#include "EventGroups.h"
 
 #endif /* RTOS_H_ */

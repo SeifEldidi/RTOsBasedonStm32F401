@@ -175,6 +175,7 @@ TCB* OsDequeQueueFront(TCBLinkedList * Queue)
 				TCB *Next = Queue->Front->Next_Task;
 				QueueFront = Queue->Front;
 				QueueFront->Next_Task = NULL;
+				Next->Prev_Task = NULL;
 				Queue->Front = Next;
 			}
 			Queue->No_Tasks--;

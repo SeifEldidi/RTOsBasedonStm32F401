@@ -60,12 +60,18 @@
 #define PENDSV_PENDING			(1<<28)
 
 #define MsToTicks(ms) (ms/OS_QUANTA)
-#define OSEnterCritical() ({__asm volatile ("CPSID i");})
-#define OSExitCritical()  ({__asm volatile ("CPSIE i");})
+#define OSEnterCritical() ({__asm volatile ("CPSID i": : : "memory");})
+#define OSExitCritical()  ({asm volatile ("CPSIE i" : : : "memory");})
 
 typedef int32_t * StackPtr;
 typedef void *    pVoid;
 typedef void (*P2FUNC)(void);
+
+#if OS_EVENT_GROUP_16BITS == 1
+	typedef uint16_t EventType;
+#elif OS_EVENT_GROUP_16BITS == 0
+	typedef uint32_t EventType;
+#endif
 
 typedef enum
 {
@@ -94,13 +100,15 @@ typedef struct TCB
 	/*-----Memory Pointer-------*/
 	StackPtr TopStack;
 	StackPtr EndStack;
-	/*-----Pointer to Next TCB----*/
+	/*-----Pointer to Next and Previous TCB----*/
 	struct TCB *Next_Task;
 	struct TCB *Prev_Task;
 	/*-----Pointer to Current Queue---*/
 	pVoid CurrQueue;
-	/*-----Wating State---*/
+	/*-----Wating State and EventGroupFlag---*/
 	int32_t WaitingTime;
+	EventType EventFlag;
+	uint8_t   EventWait;
 }TCB;
 
 typedef struct

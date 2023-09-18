@@ -44,8 +44,11 @@ typedef enum
 typedef QUEUCB_t   Queue;
 typedef QUEUCB_t * pQueue;
 
+#if OS_SCHEDULER_STATIC == TRUE
 void QueueCreateStatic(uint8_t QueueID,uint8_t QueuLen,char * QueueName,uint8_t ItemSize);
+#elif OS_SCHEDULER_STATIC == FALSE
 pQueue QueueCreateDynamic(uint8_t QueuLen,char * QueueName,uint8_t ItemSize);
+#endif
 
 #if OS_QUEUE_SEND == TRUE
 #if OS_SCHEDULER_STATIC == TRUE

@@ -9,8 +9,13 @@
 
 extern TCB * pCurrentTask;
 extern TCB * IdleTaskPtr;
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+extern TCBLinkedList OsReadyFIFO[OS_MAX_PRIORITY];
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 extern TCBLinkedList OsReadyList;
+#endif
 extern OsKernelControl KernelControl;
+
 
 #if OS_QUEUE_NUMBER >=0 && OS_QUEUE_NUMBER<=16
 QUEUCB_t   QueueCBS[OS_QUEUE_NUMBER];
@@ -24,6 +29,7 @@ static void QueueUnblockWaiting(pQueue QueuePtr);
 #endif
 static void QueueCPYbuffer(void * Src ,void *dest,int8_t Size);
 
+#if OS_SCHEDULER_STATIC == TRUE
 void QueueCreateStatic(uint8_t QueueID,uint8_t QueuLen,char * QueueName,uint8_t ItemSize)
 {
 	OSEnterCritical();
@@ -35,7 +41,7 @@ void QueueCreateStatic(uint8_t QueueID,uint8_t QueuLen,char * QueueName,uint8_t 
 	QueueCBS[QueueID].Queue.no_elements = 0;
 	OSExitCritical();
 }
-
+#elif OS_SCHEDULER_STATIC == FALSE
 pQueue QueueCreateDynamic(uint8_t QueuLen,char * QueueName,uint8_t ItemSize)
 {
 	OSEnterCritical();
@@ -61,6 +67,7 @@ pQueue QueueCreateDynamic(uint8_t QueuLen,char * QueueName,uint8_t ItemSize)
 	OSExitCritical();
 	return PQueue;
 }
+#endif
 
 #if OS_QUEUE_SEND == TRUE
 
@@ -80,7 +87,7 @@ static void QueueUnblockWaiting(pQueue QueuePtr)
 	QueuePtr->TasksWaitingRecieving--;
 	OsDequeQueueElement(&(QueuePtr->OsRecievingList),CurrentTask);
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-	OsInsertQueueSorted(&OsReadyList, CurrentTask);
+	OsInsertQueueTail(&OsReadyFIFO[CurrentTask->Priority], CurrentTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 	OsInsertQueueTail(&OsReadyList, CurrentTask);
 #endif
@@ -171,14 +178,12 @@ QueueState_t  OsQueueSend(pQueue QueuePtr,void * Message,uint8_t blocking)
 				QueueUnblockWaiting(QueuePtr);
 			} else {
 				/*-----Remove Task from Ready Queue and Insert Task into Queue Waiting List----*/
-				TCB *NewTask = pCurrentTask;
+				pCurrentTask->CurrQueue = &(QueuePtr->OsSendingList);
 				pCurrentTask->State = OS_TASK_BLOCKED;
 				QueuePtr->TasksWaitingSending++;
-				/*---------Deque from Ready List --------*/
-				OsDequeQueueElement(&OsReadyList, NewTask);
 				/*---------Insert into Queue Waiting List----*/
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-				OsInsertQueueSorted(&(QueuePtr->OsSendingList), NewTask);
+				OsInsertQueueSorted(&(QueuePtr->OsSendingList), pCurrentTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 				OsInsertQueueTail(&(QueuePtr->OsSendingList),NewTask);
 #endif
@@ -209,8 +214,9 @@ QueueState_t  OsQueueSendIsr(pQueue QueuePtr,void * Message)
 			if(NewTask != NULL)
 			{
 				uint8_t Priority = NewTask->Priority;
+				NewTask->CurrQueue = &QueuePtr->OsRecievingList;
 				OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
-				OsInsertQueueSorted(&OsReadyList, NewTask); //O(n) in case of having a task with lower priority but o(1) if Higher Priority
+				OsInsertQueueTail(&OsReadyFIFO[Priority], NewTask);//O(1) Insert Tail Operation
 				if((Priority > pCurrentTask->Priority) || (pCurrentTask == IdleTaskPtr  ))
 				{
 					//Check if the Waiting Task is Higher in Priority than the Executing Task
@@ -327,15 +333,14 @@ QueueState_t  OsQueueSendFront(pQueue QueuePtr,void * Message,uint8_t blocking)
 				DequeueInsertFront(&QueuePtr->Queue, Message);
 			} else {
 				/*-----Remove Task from Ready Queue and Insert Task into Queue Waiting List----*/
-				TCB *NewTask = pCurrentTask;
+				pCurrentTask->CurrQueue = &(QueuePtr->OsSendingList);
 				pCurrentTask->State = OS_TASK_BLOCKED;
 				QueuePtr->TasksWaitingSending++;
 				/*---------Deque from Ready List --------*/
-				OsDequeQueueElement(&OsReadyList, NewTask);
 				/*---------Insert into Semaphore Waiting List----*/
 				KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-				OsInsertQueueSorted(&(QueuePtr->OsSendingList), NewTask);
+				OsInsertQueueSorted(&(QueuePtr->OsSendingList), pCurrentTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 				OsInsertQueueTail(&(QueuePtr->OsSendingList),NewTask);
 #endif
@@ -372,7 +377,7 @@ static void QueueUnblockSending(pQueue QueuePtr)
 	QueuePtr->TasksWaitingSending--;
 	OsDequeQueueElement(&(QueuePtr->OsSendingList), CurrentTask);
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-	OsInsertQueueSorted(&OsReadyList, CurrentTask);
+	OsInsertQueueTail(&OsReadyFIFO[CurrentTask->Priority], CurrentTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 	OsInsertQueueTail(&OsReadyList, CurrentTask);
 #endif
@@ -471,14 +476,12 @@ QueueState_t  OsQueueRecieve(pQueue QueuePtr,void * Message,uint8_t blocking)
 				void *Src = DequeueRemoveRear(&QueuePtr->Queue);
 				QueueCPYbuffer(Src, Message, QueuePtr->ItemSize);
 			} else {
-				TCB *NewTask = pCurrentTask;
+				pCurrentTask->CurrQueue = &(QueuePtr->OsRecievingList);
 				pCurrentTask->State = OS_TASK_BLOCKED;
 				QueuePtr->TasksWaitingSending++;
-				/*---------Deque from Ready List --------*/
-				OsDequeQueueElement(&OsReadyList, NewTask);
 				/*---------Insert into Semaphore Waiting List----*/
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-				OsInsertQueueSorted(&(QueuePtr->OsRecievingList), NewTask);
+				OsInsertQueueSorted(&(QueuePtr->OsRecievingList), pCurrentTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 				OsInsertQueueTail(&(QueuePtr->OsRecievingList),NewTask);
 #endif
@@ -513,8 +516,9 @@ QueueState_t  OsQueueRecieveISR(pQueue QueuePtr,void * Message)
 			if(NewTask != NULL)
 			{
 				uint8_t Priority = NewTask->Priority;
+				NewTask->CurrQueue = &QueuePtr->OsRecievingList;
 				OsDequeQueueElement(&QueuePtr->OsRecievingList, NewTask); //O(1) as the front is removed
-				OsInsertQueueSorted(&OsReadyList, NewTask); //O(n) in case of having a task with lower priority but o(1) if Higher Priority
+				OsInsertQueueTail(&OsReadyFIFO[Priority], NewTask); //O(1)
 				if((Priority > pCurrentTask->Priority) || (pCurrentTask == IdleTaskPtr  ) )
 				{
 					//Receiving Task will unblock a Task which is A Higher Priority

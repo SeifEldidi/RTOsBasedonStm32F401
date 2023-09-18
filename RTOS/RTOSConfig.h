@@ -19,7 +19,11 @@
 #define OS_HEAP_SIZE				16000
 #define OS_STACK_SIZE				200
 #define OS_KERNEL_STACK_SIZE		100
+/*-------Maximum No of Tasks-------*/
 #define OS_TASKS_NUM				5
+#define OS_MAX_PRIORITY				5
+
+#define OS_EVENT_GROUP_16BITS		0
 
 #define OS_SEMAPHORE_NUMBER 		16
 #define OS_MUTEX_ENABLE				TRUE
@@ -34,5 +38,7 @@
 #define OS_QUEUE_SIZE				10
 #define OS_QUEUE_SEND				TRUE
 #define OS_QUEUE_RECIEVE			TRUE
+
+#define OS_EVENT_GROUP_NUMBER
 
 #endif /* RTOSCONFIG_H_ */

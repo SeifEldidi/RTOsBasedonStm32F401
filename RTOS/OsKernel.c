@@ -16,8 +16,12 @@ int32_t     KernelStack[OS_KERNEL_STACK_SIZE];
 int32_t    *kernelStackPtr = &KernelStack[OS_KERNEL_STACK_SIZE -1 ];
 OsKernelControl KernelControl;
 /*-----Create Global LinkedLists for Queues----*/
-
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+TCBLinkedList OsReadyFIFO[OS_MAX_PRIORITY];
+static void osPriorityFindNextTask();
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 TCBLinkedList OsReadyList;
+#endif
 TCBLinkedList OsWaitingQueue;
 TCBLinkedList OsSuspendedQueue;
 TCB *         pCurrentTask;
@@ -31,6 +35,8 @@ static void  IdleTask();
 static void  OsLuanchScheduler();
 static void  OsUserMode();
 void osTaskDelayCheck();
+
+
 #if OS_SCHEDULER_STATIC == TRUE
 static void 	OsKernelTaskInitStatic(uint32_t Thread_Index);
 #elif OS_SCHEDULER_STATIC == FALSE
@@ -60,41 +66,47 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 	OSEnterCritical();
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 	//Allocate Memory for TASK Stack and Task Control Block
-	TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
-	TCB *IdleTCB = (TCB*) OsMalloc(1 * sizeof(TCB));
-	if (OsReadyList.No_Tasks == 0) {
-		StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(OS_STACK_ALLIGN));
-		StackPtr IDLETask = (StackPtr) OsMalloc(50 * sizeof(OS_STACK_ALLIGN));
-	}
-	if (TaskN != NULL && TaskStack != NULL) {
-		TaskN->ID = ID;
-		TaskN->Priority = Priority;
-		TaskN->TaskCode = TaskCode;
-		TaskN->WaitingTime = -1;
-		TaskN->CurrQueue = OsReadyList;
-
-		if (Taskhandle != NULL)
-			(*Taskhandle) = TaskN;
-		else {
+	if(OsReadyList.No_Tasks < OS_TASKS_NUM )
+	{
+		TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
+		TCB *IdleTCB = (TCB*) OsMalloc(1 * sizeof(TCB));
+		if (OsReadyList.No_Tasks == 0) {
+			StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(OS_STACK_ALLIGN));
+			StackPtr IDLETask = (StackPtr) OsMalloc(50 * sizeof(OS_STACK_ALLIGN));
 		}
-		OsInsertQueueHead(&OsReadyList, TaskN);
-		OsKernelTaskInitDynamic(StackSize, TaskStack, TaskN, OS_NORMAL_TASK);
-		if(OsReadyList.No_Tasks == 0)
-		{
-			if (IDLETask != NULL && IdleTCB != NULL)
-			{
-				IdleTCB->Priority = 0;
-				OsKernelTaskInitDynamic(50, IDLETask, IdleTCB, OS_IDLE_TASK);
+		if (TaskN != NULL && TaskStack != NULL) {
+			TaskN->ID = ID;
+			TaskN->Priority = Priority;
+			TaskN->TaskCode = TaskCode;
+			TaskN->WaitingTime = -1;
+			TaskN->CurrQueue = OsReadyList;
+
+			if (Taskhandle != NULL)
+				(*Taskhandle) = TaskN;
+			else {
 			}
-		}else{
+			OsInsertQueueHead(&OsReadyList, TaskN);
+			OsKernelTaskInitDynamic(StackSize, TaskStack, TaskN, OS_NORMAL_TASK);
+			if(OsReadyList.No_Tasks == 0)
+			{
+				if (IDLETask != NULL && IdleTCB != NULL)
+				{
+					IdleTCB->Priority = 0;
+					OsKernelTaskInitDynamic(50, IDLETask, IdleTCB, OS_IDLE_TASK);
+				}
+			}else{
+				OS_RET = OS_MEM_ERR;
+			}
+		} else {
 			OS_RET = OS_MEM_ERR;
 		}
-	} else {
+	}else{
 		OS_RET = OS_MEM_ERR;
 	}
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+	static uint8_t TaskCounter = 0;
 	//insert Only into Head if Highest priority
-	if (OsReadyList.No_Tasks == 0) {
+	if (TaskCounter == 0) {
 		//Allocate Memory for TASK Stack and Task Control Block
 		TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
 		TCB *IdleTCB = (TCB*)OsMalloc(1*sizeof(TCB));
@@ -102,62 +114,57 @@ static uint8_t OsTaskCreateDynamic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,u
 		StackPtr IDLETask = (StackPtr) OsMalloc(50 * sizeof(OS_STACK_ALLIGN));
 		if(TaskN != NULL && TaskStack != NULL)
 		{
+			if (Priority > OS_MAX_PRIORITY)
+				Priority = OS_MAX_PRIORITY;
+			else {
+			}
 			TaskN->ID = ID;
 			TaskN->Priority = Priority;
 			TaskN->TaskCode = TaskCode;
 			TaskN->WaitingTime = -1;
-			TaskN->CurrQueue = &OsReadyList;
+			TaskN->CurrQueue = &OsReadyFIFO[TaskN->Priority];
+
 
 			if (Taskhandle != NULL)
 				(*Taskhandle) = TaskN;
-			OsInsertQueueHead(&OsReadyList, TaskN);
+
+			OsInsertQueueHead(&OsReadyFIFO[TaskN->Priority], TaskN);
+
 			OsKernelTaskInitDynamic(StackSize,TaskStack,TaskN,OS_NORMAL_TASK);;
 			if(IDLETask != NULL && IdleTCB!= NULL)
 			{
 				IdleTCB->Priority = 0;
 				OsKernelTaskInitDynamic(50,IDLETask,IdleTCB,OS_IDLE_TASK);
 			}
+			TaskCounter++;
 		}
 		else {
 			OS_RET = OS_MEM_ERR;
 		}
-	} else if (OsReadyList.No_Tasks > 0) {
-		TCB *Prev = NULL;
-		TCB *pCurrentTaskL = OsReadyList.Front;
-		uint8_t TaskPriority = Priority;
-		/*----Adding A Task while Executing----*/
+	} else if (TaskCounter > 0 && TaskCounter < OS_TASKS_NUM) {
+		/*----Adding A Task Dynamically----*/
 		TCB *TaskN = (TCB*) OsMalloc(1 * sizeof(TCB));
 		StackPtr TaskStack = (StackPtr) OsMalloc(StackSize * sizeof(OS_STACK_ALLIGN));
 		if(TaskN != NULL && TaskStack != NULL)
 		{
+			if (Priority > OS_MAX_PRIORITY)
+				Priority = OS_MAX_PRIORITY;
+			else {
+			}
 			TaskN->ID = ID;
 			TaskN->Priority = Priority;
 			TaskN->TaskCode = TaskCode;
 			TaskN->WaitingTime = -1;
-			TaskN->CurrQueue = &OsReadyList;
+			TaskN->CurrQueue = &OsReadyFIFO[TaskN->Priority];
 
-			while (pCurrentTaskL != NULL) {
-				//List is Sorted according to Priority
-				if (TaskPriority > pCurrentTaskL->Priority) {
-					if (Prev != NULL) {
-						TaskN->Next_Task = pCurrentTaskL;
-						Prev->Next_Task = TaskN;
-					} else
-						OsInsertQueueHead(&OsReadyList,TaskN);
-					break;
-				} else {
-					Prev = pCurrentTaskL;
-					pCurrentTaskL = pCurrentTaskL->Next_Task;
-				}
-			}
-			if (pCurrentTaskL == NULL)
-				OsInsertQueueTail(&OsReadyList, TaskN);
+			OsInsertQueueTail(&OsReadyFIFO[TaskN->Priority], TaskN);
 
 			if (Taskhandle != NULL)
 				(*Taskhandle) = TaskN;
 			else {
 			}
 			OsKernelTaskInitDynamic(StackSize,TaskStack,TaskN,OS_NORMAL_TASK);
+			TaskCounter++;
 		}else{
 			OS_RET = OS_MEM_ERR;
 		}
@@ -197,7 +204,7 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 			OS_TASKS[OsReadyList.No_Tasks].Priority  = Priority;
 			OS_TASKS[OsReadyList.No_Tasks].TaskCode  = TaskCode;
 			OS_TASKS[OsReadyList.No_Tasks].WaitingTime  = -1;
-			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList
+			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList;
 
 			if(Taskhandle != NULL)
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
@@ -209,56 +216,50 @@ static uint8_t OsTaskCreateStatic(P2FUNC TaskCode,uint8_t ID,uint8_t Priority,Ta
 		}
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
 		//insert Only into Head if Highest priority
-		if(OsReadyList.No_Tasks == 0)
+		static uint8_t TaskCounter = 0;
+		if(TaskCounter == 0)
 		{
+			if (Priority > OS_MAX_PRIORITY)
+				Priority = OS_MAX_PRIORITY;
+			else {
+			}
 			OS_TASKS[OsReadyList.No_Tasks].ID = ID;
 			OS_TASKS[OsReadyList.No_Tasks].Priority = Priority;
 			OS_TASKS[OsReadyList.No_Tasks].TaskCode = TaskCode;
 			OS_TASKS[OsReadyList.No_Tasks].WaitingTime = -1;
-			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList
+			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = &OsReadyFIFO[OS_TASKS[OsReadyList.No_Tasks].Priority];
 
 			if (Taskhandle != NULL)
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
 			else {}
-			OsInsertQueueHead(&OsReadyList, &OS_TASKS[OsReadyList.No_Tasks]);
+
+			OsInsertQueueHead(&OsReadyFIFO[OS_TASKS[OsReadyList.No_Tasks].Priority], &OS_TASKS[OsReadyList.No_Tasks]);
 			OsKernelTaskInitStatic(OsReadyList.No_Tasks - 1);
 			OsKernelTaskInitStatic(OS_IDLE_TASK_OFFSET);
-		}else if(OsReadyList.No_Tasks < OS_TASKS_NUM && OsReadyList.No_Tasks > 0)
+			TaskCounter++;
+		}else if(TaskCounter < OS_TASKS_NUM && TaskCounter > 0)
 		{
 			TCB * Prev = NULL;
 			TCB * pCurrentTaskL = OsReadyList.Front;
 			uint8_t TaskPriority = Priority;
 			/*----Adding A Task while Executing----*/
+			if (Priority > OS_MAX_PRIORITY)
+				Priority = OS_MAX_PRIORITY;
+			else {
+			}
 			OS_TASKS[OsReadyList.No_Tasks].ID = ID;
 			OS_TASKS[OsReadyList.No_Tasks].Priority = Priority;
 			OS_TASKS[OsReadyList.No_Tasks].TaskCode = TaskCode;
 			OS_TASKS[OsReadyList.No_Tasks].WaitingTime = -1;
-			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = OsReadyList
+			OS_TASKS[OsReadyList.No_Tasks].CurrQueue  = &OsReadyFIFO[OS_TASKS[OsReadyList.No_Tasks].Priority];
 
-			while(pCurrentTaskL != NULL)
-			{
-				//List is Sorted according to Priority
-				if(TaskPriority > pCurrentTaskL->Priority)
-				{
-					if(Prev != NULL)
-					{
-						OS_TASKS[OsReadyList.No_Tasks].Next_Task = pCurrentTaskL;
-						Prev->Next_Task = &OS_TASKS[OsReadyList.No_Tasks];
-					}else
-						OsInsertQueueHead(&OsReadyList, &OS_TASKS[OsReadyList.No_Tasks]);
-					break;
-				}else{
-					Prev = pCurrentTaskL;
-					pCurrentTaskL = pCurrentTaskL->Next_Task;
-				}
-			}
-			if(pCurrentTaskL == NULL)
-				OsInsertQueueTail(&OsReadyList, &OS_TASKS[OsReadyList.No_Tasks]);
+			OsInsertQueueTail(&OsReadyFIFO[OS_TASKS[OsReadyList.No_Tasks].Priority], &OS_TASKS[OsReadyList.No_Tasks]);
 
 			if (Taskhandle != NULL)
 				(*Taskhandle) = &OS_TASKS[OsReadyList.No_Tasks];
 			else {}
 			OsKernelTaskInitStatic(OsReadyList.No_Tasks - 1);
+			TaskCounter++;
 		}else{
 				OS_RET = OS_NOT_OK;
 		}
@@ -374,9 +375,9 @@ void  OsTaskResume(TaskHandle_t  TaskHandler)
 	Found = OsDequeQueueElement(&OsSuspendedQueue,TaskHandler);
 	if(Found != NULL)
 	{
-		TaskHandler->CurrQueue = &OsReadyList;
+		TaskHandler->CurrQueue = &OsReadyFIFO[TaskHandler->Priority];
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-		OsInsertQueueSorted(&OsReadyList,TaskHandler);
+		OsInsertQueueTail(&OsReadyFIFO[TaskHandler->Priority], TaskHandler);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 		OsInsertQueueTail(&OsReadyList,TaskHandler);
 #endif
@@ -420,7 +421,11 @@ void  OsKernelStart()
 	__asm volatile("LDR R1,[R0]");
 	__asm volatile("MSR MSP ,R1");
 	/*-----Set Current Task-----*/
+#if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+	osPriorityFindNextTask();
+#elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 	pCurrentTask  = OsReadyList.Front;
+#endif
 	/*-----Switch To Stack of the User----*/
 	OsUserMode();
 	/*-----Luanch Scheduler-----*/
@@ -431,26 +436,22 @@ void OsDelay(uint32_t delayQuantaBased)
 {
 	OSEnterCritical();
 	/*-----OSdelay Must Remove Task from Ready Queue and Insert it in the Blocking Queue----*/
-	if(OsReadyList.No_Tasks >0)
-	{
-		if(delayQuantaBased > 0)
-		{
-			TCB *NewTask     = pCurrentTask ;
-			NewTask->WaitingTime = delayQuantaBased;
-			pCurrentTask->State = OS_TASK_BLOCKED;
-			/*-----Remove Task From Ready Queue----*/
-			OsDequeQueueElement(&OsReadyList,NewTask);
-			/*-----Insert Task to Blocking Queue----*/
-			pCurrentTask->CurrQueue = &OsWaitingQueue;
+	if (delayQuantaBased > 0) {
+		TCB *NewTask = pCurrentTask;
+		NewTask->WaitingTime = delayQuantaBased;
+		pCurrentTask->State = OS_TASK_BLOCKED;
+		/*-----Remove Task From Ready Queue----*/
+		/*-----Insert Task to Blocking Queue----*/
+		pCurrentTask->CurrQueue = &OsWaitingQueue;
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-			OsInsertQueueSorted(&OsWaitingQueue,NewTask);
+		OsInsertQueueSorted(&OsWaitingQueue, NewTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
-			OsInsertQueueTail(&OsWaitingQueue,NewTask);
+		OsInsertQueueTail(&OsWaitingQueue,NewTask);
 #endif
-			KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
-			pCurrentTask = NewTask;
-		}
-	}else{
+		KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
+		pCurrentTask = NewTask;
+	}
+	else{
 
 	}
 	OSExitCritical();
@@ -590,65 +591,53 @@ void osRoundRobinScheduler()
 	}
 }
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+
+static void osPriorityFindNextTask()
+{
+	uint8_t PriorityFIFO = 0;
+	// Look For Next Task and Select Highest Task in ReadyFIFO
+	for(PriorityFIFO = 1 ; PriorityFIFO <= OS_MAX_PRIORITY -1 ;PriorityFIFO++)
+	{
+		TCB * HeadQueue = OsReadyFIFO[PriorityFIFO].Front;
+		if(HeadQueue != NULL)
+		{
+			/*--------Remove Task from FIFO-------*/
+			OsDequeQueueFront(&OsReadyFIFO[PriorityFIFO]);
+			/*--------Insert Task into ReadyList-----*/
+			pCurrentTask = HeadQueue;
+			return;
+		}
+	}
+	pCurrentTask = IdleTaskPtr;
+}
+
 //What Happens is that Tasks with Same Priority operate on a Round-Robin basis
 void osPriorityScheduler()
 {
 	//Idle Task CODE
 	if (pCurrentTask->TaskCode == (P2FUNC) IdleTask) {
-		if (OsReadyList.Front != NULL)
-			pCurrentTask = OsReadyList.Front;
+		osPriorityFindNextTask();
 		IdleTaskTime++;
 	} else {
 		if (KernelControl.ContextSwitchControl == OS_CONTEXT_NORMAL) {
-			//Remove Currently Executing Task and place at the Tail of the Tasks with same Priority Round Robin Priority
-			OsDequeQueueFront(&OsReadyList);
-			TCB * NextTaskP = OsReadyList.Front;
-			TCB * PrevTask = NULL;
-			uint8_t TaskPriority   = pCurrentTask->Priority;
-			if(NextTaskP != NULL)
-			{
-				while(NextTaskP->Priority >= TaskPriority)
-				{
-					PrevTask = NextTaskP;
-					NextTaskP = NextTaskP->Next_Task;
-				}
-				if(PrevTask != NULL)
-				{
-					pCurrentTask->Next_Task = PrevTask->Next_Task;
-					PrevTask->Next_Task = pCurrentTask;
-				}else{
-					OsReadyList.Front = pCurrentTask;
-					pCurrentTask->Next_Task = NextTaskP;
-				}
-				if(NextTaskP == NULL)
-					OsReadyList.Rear = pCurrentTask;
-				else{}
-				OsReadyList.No_Tasks++;
-			}else
-				OsInsertQueueHead(&OsReadyList,pCurrentTask);
-			pCurrentTask = OsReadyList.Front;
+			//Insert Current Executing Task To Tail of Priority List
+			OsInsertQueueTail(&OsReadyFIFO[pCurrentTask->Priority],pCurrentTask);
+			//Look For Next Task
+			osPriorityFindNextTask();
 			pCurrentTask->State = OS_TASK_RUNNING;
 		} else if (KernelControl.ContextSwitchControl == OS_CONTEXT_BLOCKED) {
 			KernelControl.ContextSwitchControl = OS_CONTEXT_NORMAL;
-			if (OsReadyList.Front != NULL)
-				pCurrentTask = OsReadyList.Front;
-			else
-				pCurrentTask = IdleTaskPtr;
+			osPriorityFindNextTask();
 			pCurrentTask->State = OS_TASK_RUNNING;
 		}else if(KernelControl.ContextSwitchControl == OS_CONTEXT_KILL)
 		{
 			KernelControl.ContextSwitchControl = OS_CONTEXT_NORMAL;
 			#if OS_SCHEDULER_STATIC == FALSE
-				TCB *NextTaskP = OsReadyList.Front;
-				if (NextTaskP != NULL) {
-					pCurrentTask = NextTaskP;
-				} else
-				{
-					pCurrentTask = IdleTaskPtr;
-					pCurrentTask->State = OS_TASK_RUNNING;
-				}
+				osPriorityFindNextTask();
+				pCurrentTask ->State = OS_TASK_RUNNING;
 			#endif
 		}
+		pCurrentTask->CurrQueue = NULL;
 	}
 }
 #endif
@@ -665,13 +654,16 @@ void osTaskDelayCheck()
 				TCB *NewTask = FrontWaitingQueue;
 				NewTask->WaitingTime = -1;
 				/*------Wake the Task from Sleep------*/
+				#if  OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
+
+				#endif
 				OsDequeQueueElement(&OsWaitingQueue, FrontWaitingQueue);
 				/*------Add  Task to the Scheduler Queue----*/
 #if OS_SCHEDULER_SELECT == OS_SCHEDULER_ROUND_ROBIN
 				OsInsertQueueTail(&OsReadyList, NewTask);
 #elif OS_SCHEDULER_SELECT == OS_SCHEDULER_PRIORITY
-				KernelControl.ContextSwitchControl = OS_CONTEXT_BLOCKED;
-				OsInsertQueueSorted(&OsReadyList, NewTask);
+				KernelControl.ContextSwitchControl = OS_CONTEXT_NORMAL;
+				OsInsertQueueTail(&OsReadyFIFO[NewTask->Priority], NewTask);
 #endif
 			}
 			FrontWaitingQueue = FrontWaitingQueue->Next_Task;
@@ -689,15 +681,10 @@ void OsPrioritySet(TaskHandle_t Taskhandle,uint8_t Priority)
 		OsDequeQueueElement((TCBLinkedList *)&Taskhandle->CurrQueue, Taskhandle);
 		Taskhandle->Priority = Priority ;
 		OsInsertQueueSorted((TCBLinkedList *)&Taskhandle->CurrQueue, Taskhandle);
-		if(Taskhandle->CurrQueue == (void*)(&OsReadyList) )
-		{
-			if((pCurrentTask && pCurrentTask->Priority <Priority) || pCurrentTask == IdleTaskPtr)
-				OsThreadYield(PRIVILEDGED_ACCESS);
-		}
+		if ((pCurrentTask && pCurrentTask->Priority < Priority)|| pCurrentTask == IdleTaskPtr)
+			OsThreadYield(PRIVILEDGED_ACCESS);
 	}else{
-		OsDequeQueueElement((TCBLinkedList *)&pCurrentTask->CurrQueue, Taskhandle);
 		pCurrentTask->Priority = Priority;
-		OsInsertQueueSorted((TCBLinkedList *)&pCurrentTask->CurrQueue, Taskhandle);
 	}
 }
 #endif
@@ -710,8 +697,6 @@ void    OsKillTask(TaskHandle_t Taskhandle)
 	uint8_t ContextSwitch = 0;
 	if(Taskhandle == NULL)
 	{
-		//Currently Running Task is the first Task in the Ready Queue
-		OsDequeQueueFront(&OsReadyList);
 		/*-------Kill Current Task------*/
 		CurrTask = pCurrentTask;
 		/*-------Reqeust Context Switch----*/
